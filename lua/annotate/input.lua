@@ -9,7 +9,7 @@ local config = require("annotate.config")
 ---@class annotate.InputOptions
 ---@field type? string
 ---@field text? string
----@field title? string fixed title for free text that has no type, cycling is disabled
+---@field title? string fixed title for free text that has no type, cycling is disabled; submitting calls back with a nil type and the text, empty included, cancelling with nils
 ---@field location? annotate.Location what the note is taken on, for the `prefill` of its type
 
 ---@param opts annotate.InputOptions
@@ -23,6 +23,10 @@ function M.fallback(opts, callback)
   local t = config.type(opts.type) or config.options.types[1]
 
   vim.ui.input({ prompt = opts.title and ("%s: "):format(opts.title) or ("%s %s: "):format(t.icon, t.name), default = opts.text }, function(text)
+    if opts.title then
+      return callback(nil, text and vim.trim(text))
+    end
+
     text = text and vim.trim(text) or ""
 
     if text == "" then
@@ -189,7 +193,9 @@ function M.open(opts, callback)
         cfg.keys.submit,
         function(self)
           local text = vim.trim(self:text())
-          if text ~= "" then
+          if opts.title then
+            result = { nil, text }
+          elseif text ~= "" then
             result = { types[index].key, text }
           end
 

@@ -766,7 +766,7 @@ function M.confirm(title, lines, callback)
   })
 end
 
---- Asks for the verdict and the summary note of a submit, nil when the verdict is cancelled.
+--- Asks for the verdict, then the review note, nil when either is cancelled.
 ---@param publisher annotate.Publisher
 ---@param verdicts { list: annotate.Verdict[], reason?: string }
 ---@param opts annotate.PublishOptions
@@ -799,6 +799,9 @@ local function review(publisher, verdicts, opts)
     local _, text = M.wait(function(callback)
       require("annotate.input").open({ title = "Review note" }, callback)
     end)
+    if text == nil then
+      return nil
+    end
     note = text
   end
 

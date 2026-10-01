@@ -764,12 +764,13 @@ T["an empty note posts nothing"] = function()
   verdict("Comment")
   input.open = function(opts, callback)
     eq(opts.title, "Review note")
-    callback(nil, nil)
+    callback(nil, "")
   end
   add({ file = "a.lua", line = 2 })
 
   publishers.publish({ publish = true })
 
+  eq(#requests("POST", "bulk_publish$"), 1)
   eq(#requests("POST", "/notes$"), 0)
   eq(#requests("POST", "/approve$"), 0)
 end
@@ -857,6 +858,74 @@ T["a verdict the target does not allow is refused"] = function()
 
   eq(messages[#messages], "annotate: the approve verdict is not available on this pull request: approving is not available: you authored this pull request")
   eq(forge.submitted, nil)
+end
+
+T["submit asks summary, verdict and note in order before posting anything"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  stub(forge)
+  config.setup({ external = { summary = true } })
+  local order = {}
+  local stubbed = publishers.run
+  publishers.run = function(cmd, stdin, callback)
+    for _, arg in ipairs(cmd) do
+      if arg == "POST" or arg == "PATCH" or arg == "PUT" then
+        table.insert(order, "post")
+        break
+      end
+    end
+    stubbed(cmd, stdin, callback)
+  end
+  vim.ui.select = function(items, opts, callback)
+    if opts.prompt == "annotate: submit the review as" then
+      table.insert(order, "verdict")
+      return callback(items[2])
+    end
+    table.insert(order, "summary")
+    callback(items[1])
+  end
+  input.open = function(opts, callback)
+    table.insert(order, "note")
+    eq(opts.title, "Review note")
+    callback(nil, "Thanks.")
+  end
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true })
+
+  eq(vim.list_slice(order, 1, 4), { "summary", "verdict", "note", "post" })
+  eq(forge.submitted, { event = "APPROVE", body = "Thanks." })
+end
+
+T["cancelling the review note cancels the submit"] = function()
+  stub(gitlab())
+  answer({ "Comment" })
+  input.open = function(_, callback)
+    callback(nil, nil)
+  end
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true })
+
+  eq(#requests("POST", ""), 0)
+  eq(messages[#messages], "Submitting the review was cancelled.")
+end
+
+T["staging asks neither the verdict nor the note"] = function()
+  stub(gitlab())
+  local asked = {}
+  vim.ui.select = function(_, opts)
+    table.insert(asked, opts.prompt)
+  end
+  input.open = function()
+    table.insert(asked, "note")
+  end
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish()
+
+  eq(asked, {})
+  eq(#requests("POST", "draft_notes$"), 1)
 end
 
 T["cancelling the verdict posts nothing"] = function()

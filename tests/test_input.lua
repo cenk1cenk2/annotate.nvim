@@ -79,6 +79,10 @@ local function snacks()
         return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
       end
       function win.set_title() end
+      function win.close()
+        pcall(vim.api.nvim_win_close, win.win, true)
+        opts.on_close()
+      end
       opts.on_buf(win)
       fake.win = win
 
@@ -135,6 +139,27 @@ T["cycling into a prefill type fills only an empty input"] = function()
   eq(vim.api.nvim_buf_get_lines(fake.win.buf, 0, -1, false), { "mine" })
   vim.cmd.stopinsert()
   package.loaded.snacks = nil
+end
+
+T["a titled input calls back with the empty text on submit and nils on close"] = function()
+  local fake = snacks()
+  local keys = config.options.input.keys
+  local results = {}
+  local function open()
+    require("annotate.input").open({ title = "Review note" }, function(...)
+      table.insert(results, { ... })
+    end)
+  end
+
+  open()
+  press(fake, keys.submit)
+  open()
+  press(fake, keys.close)
+  vim.wait(100, function()
+    return #results == 2
+  end)
+
+  eq(results, { { nil, "" }, {} })
 end
 
 return T
