@@ -38,16 +38,27 @@ local M = {}
 ---@field blend number
 ---@field priority integer
 
+---@class annotate.ShowConfig
+---@field border? string nil inherits input.border
+---@field max_width integer
+---@field max_height integer
+---@field focusable boolean
+
 ---@class annotate.PickerKeys
 ---@field edit string|false
 ---@field delete string|false
 ---@field delete_all string|false
 ---@field type string|false
 
+---@class annotate.PickerForce
+---@field delete boolean
+---@field delete_all boolean
+
 ---@class annotate.PickerConfig
 ---@field backend? "snacks"|"select" nil picks snacks when available
 ---@field title string
 ---@field keys annotate.PickerKeys
+---@field force annotate.PickerForce
 
 ---@class annotate.QuickfixConfig
 ---@field title string
@@ -83,6 +94,7 @@ local M = {}
 ---@field store? annotate.StoreConfig
 ---@field marks? annotate.MarksConfig
 ---@field input? annotate.InputConfig
+---@field show? annotate.ShowConfig
 ---@field picker? annotate.PickerConfig
 ---@field quickfix? annotate.QuickfixConfig
 ---@field notify? annotate.NotifyConfig
@@ -173,6 +185,12 @@ local defaults = {
       cancel = "q",
     },
   },
+  show = {
+    border = nil,
+    max_width = 80,
+    max_height = 20,
+    focusable = true,
+  },
   picker = {
     backend = nil,
     title = "Annotations",
@@ -181,6 +199,10 @@ local defaults = {
       delete = "<C-d>",
       delete_all = "<C-x>",
       type = "<C-t>",
+    },
+    force = {
+      delete = false,
+      delete_all = false,
     },
   },
   quickfix = {

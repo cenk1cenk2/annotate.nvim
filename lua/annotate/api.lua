@@ -1,4 +1,7 @@
-local M = {}
+local M = {
+  ---@type { win: snacks.win, focused: boolean }?
+  hover = nil,
+}
 
 local config = require("annotate.config")
 local git = require("annotate.git")
@@ -40,19 +43,60 @@ local function resolve(bufnr, line1, line2)
   return location
 end
 
----@return annotate.Annotation?
+--- Every annotation covering the cursor line, the whole-file ones only on line 1 when nothing else covers it.
+---@return annotate.Annotation[]
 local function under_cursor()
   local location = resolve(0, vim.fn.line("."), vim.fn.line("."))
   if not location then
-    return nil
+    return {}
   end
 
-  local annotation = store.get_at(location.file, location.line, location.rev) or store.get_at(location.file, 0, location.rev)
-  if not annotation then
+  local annotations = vim.tbl_filter(function(annotation)
+    return annotation.line > 0 and location.line >= annotation.line and location.line <= (annotation.line_end or annotation.line)
+  end, store.for_file(location.file, location.rev))
+  if #annotations == 0 and location.line == 1 then
+    annotations = vim.tbl_filter(function(annotation)
+      return annotation.line == 0
+    end, store.for_file(location.file, location.rev))
+  end
+
+  if #annotations == 0 then
     notify("No annotation under the cursor.")
   end
 
-  return annotation
+  return annotations
+end
+
+--- Calls back with the only annotation, or lets the user choose one when they overlap, optionally offering all of them.
+---@param annotations annotate.Annotation[]
+---@param all boolean
+---@param callback fun(chosen: annotate.Annotation[])
+local function choose(annotations, all, callback)
+  if #annotations == 1 then
+    return callback(annotations)
+  end
+
+  local items = vim.list_extend({}, annotations)
+  if all then
+    table.insert(items, "All of them")
+  end
+
+  vim.ui.select(items, {
+    prompt = config.options.picker.title,
+    format_item = function(item)
+      if type(item) == "string" then
+        return item
+      end
+
+      local t = marks.type(item)
+
+      return ("%s %s: %s (%s)"):format(t.icon, t.name, vim.split(item.text, "\n", { plain = true })[1], require("annotate.export").location(item))
+    end,
+  }, function(item)
+    if item then
+      callback(type(item) == "string" and annotations or { item })
+    end
+  end)
 end
 
 ---@param location annotate.Location
@@ -101,18 +145,22 @@ end
 
 --- Edits the annotation under the cursor.
 function M.edit()
-  local annotation = under_cursor()
-  if not annotation then
+  local annotations = under_cursor()
+  if #annotations == 0 then
     return
   end
 
-  input.open({ type = annotation.type, text = annotation.text }, function(type_key, text)
-    if not type_key then
-      return
-    end
+  choose(annotations, false, function(chosen)
+    local annotation = chosen[1]
 
-    store.update(annotation.id, { type = type_key, text = text })
-    marks.refresh()
+    input.open({ type = annotation.type, text = annotation.text }, function(type_key, text)
+      if not type_key then
+        return
+      end
+
+      store.update(annotation.id, { type = type_key, text = text })
+      marks.refresh()
+    end)
   end)
 end
 
@@ -126,10 +174,11 @@ local function confirm(prompt, callback)
   end)
 end
 
---- Deletes the annotations, asking first when `confirm_delete` is set.
+--- Deletes the annotations, asking first when `confirm_delete` is set and it is not forced.
 ---@param annotations annotate.Annotation[]
+---@param force? boolean
 ---@param callback fun()
-local function remove(annotations, callback)
+local function remove(annotations, force, callback)
   local function delete()
     for _, annotation in ipairs(annotations) do
       store.delete(annotation.id)
@@ -137,7 +186,7 @@ local function remove(annotations, callback)
     callback()
   end
 
-  if not config.options.confirm_delete then
+  if force or not config.options.confirm_delete then
     return delete()
   end
 
@@ -148,14 +197,101 @@ local function remove(annotations, callback)
   )
 end
 
---- Deletes the annotation under the cursor after confirmation.
-function M.delete()
-  local annotation = under_cursor()
-  if not annotation then
+--- Deletes the annotation under the cursor after confirmation, choosing first when several overlap.
+---@param opts? { force?: boolean } force skips the confirmation
+function M.delete(opts)
+  opts = opts or {}
+
+  local annotations = under_cursor()
+  if #annotations == 0 then
     return
   end
 
-  remove({ annotation }, marks.refresh)
+  choose(annotations, true, function(chosen)
+    remove(chosen, opts.force, marks.refresh)
+  end)
+end
+
+--- Shows the annotations on the cursor line in a float, focusing the float when it is already open.
+function M.show()
+  local cfg = config.options.show
+
+  if M.hover and M.hover.win:valid() and cfg.focusable then
+    M.hover.focused = true
+
+    return M.hover.win:focus()
+  end
+
+  local annotations = under_cursor()
+  if #annotations == 0 then
+    return
+  end
+
+  local lines = {}
+  for index, annotation in ipairs(annotations) do
+    local t = marks.type(annotation)
+
+    if index > 1 then
+      vim.list_extend(lines, { "", "---", "" })
+    end
+    vim.list_extend(lines, { ("## %s %s"):format(t.icon, t.name), "", ("`%s`"):format(require("annotate.export").location(annotation)), "" })
+    if t.prompt ~= "" then
+      vim.list_extend(lines, { ("_%s_"):format(t.prompt), "" })
+    end
+    vim.list_extend(lines, vim.split(annotation.text, "\n", { plain = true }))
+  end
+
+  local border = cfg.border or config.options.input.border
+
+  local ok, snacks = pcall(require, "snacks")
+  if not ok then
+    return vim.lsp.util.open_floating_preview(lines, "markdown", {
+      border = border,
+      max_width = cfg.max_width,
+      max_height = cfg.max_height,
+      focusable = cfg.focusable,
+      focus_id = "annotate",
+    })
+  end
+
+  local width = 1
+  for _, line in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(line))
+  end
+  width = math.min(width, cfg.max_width)
+
+  local height = 0
+  for _, line in ipairs(lines) do
+    height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / width))
+  end
+
+  local hover = { focused = false }
+  hover.win = snacks.win({
+    relative = "cursor",
+    row = 1,
+    col = 0,
+    width = width,
+    height = math.min(height, cfg.max_height),
+    border = border,
+    focusable = cfg.focusable,
+    enter = false,
+    text = lines,
+    bo = { filetype = "markdown", modifiable = false },
+    wo = { wrap = true, linebreak = true },
+    keys = { q = "close", ["<Esc>"] = "close" },
+    on_buf = function(self)
+      pcall(vim.treesitter.start, self.buf, "markdown")
+    end,
+  })
+  hover.win:on({ "CursorMoved", "CursorMovedI", "InsertEnter", "BufLeave" }, function(self)
+    if not hover.focused then
+      self:close()
+    end
+  end, { buffer = vim.api.nvim_get_current_buf() })
+  hover.win:on("WinLeave", function(self)
+    self:close()
+  end, { buf = true })
+  M.hover = hover
 end
 
 ---@param forward boolean
@@ -294,7 +430,7 @@ M.actions = {
         return
       end
 
-      remove(annotations, function()
+      remove(annotations, config.options.picker.force.delete, function()
         marks.refresh()
         picker:refresh()
       end)
@@ -303,10 +439,16 @@ M.actions = {
   delete_all = {
     desc = "Archive and clear all annotations",
     action = function(picker)
-      confirm("Archive and clear all annotations?", function()
+      local function clear()
         picker:close()
-        M.clear()
-      end)
+        M.clear({ force = true })
+      end
+
+      if config.options.picker.force.delete_all then
+        return clear()
+      end
+
+      confirm("Archive and clear all annotations?", clear)
     end,
   },
   type = {
@@ -351,16 +493,25 @@ function M.quickfix()
   end
 end
 
---- Archives the annotations of the repository and clears the marks.
-function M.clear()
+--- Archives the annotations of the repository and clears the marks after confirmation.
+---@param opts? { force?: boolean } force skips the confirmation
+function M.clear(opts)
   if not root() then
     return
   end
 
-  local archived = store.archive()
-  marks.clear()
+  local function clear()
+    local archived = store.archive()
+    marks.clear()
 
-  notify(archived and ("Archived annotations to %s."):format(archived) or "There were no annotations to archive.", vim.log.levels.INFO)
+    notify(archived and ("Archived annotations to %s."):format(archived) or "There were no annotations to archive.", vim.log.levels.INFO)
+  end
+
+  if (opts or {}).force then
+    return clear()
+  end
+
+  confirm("Archive and clear all annotations?", clear)
 end
 
 return M

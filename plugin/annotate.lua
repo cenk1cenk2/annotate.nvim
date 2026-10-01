@@ -13,8 +13,11 @@ local subcommands = {
   edit = function()
     require("annotate").edit()
   end,
-  delete = function()
-    require("annotate").delete()
+  delete = function(_, force)
+    require("annotate").delete({ force = force })
+  end,
+  show = function()
+    require("annotate").show()
   end,
   next = function()
     require("annotate").next()
@@ -34,21 +37,23 @@ local subcommands = {
   preview = function()
     require("annotate").preview()
   end,
-  clear = function()
-    require("annotate").clear()
+  clear = function(_, force)
+    require("annotate").clear({ force = force })
   end,
 }
 
 vim.api.nvim_create_user_command("Annotate", function(cmd)
-  local subcommand = subcommands[cmd.fargs[1]]
+  local name, bang = cmd.fargs[1]:match("^(.-)(!?)$")
+  local subcommand = subcommands[name]
   if not subcommand then
     return vim.notify(("Unknown subcommand: %s"):format(cmd.fargs[1]), vim.log.levels.ERROR, { title = require("annotate.config").options.notify.title })
   end
 
-  subcommand(cmd)
+  subcommand(cmd, cmd.bang or bang == "!")
 end, {
   nargs = "+",
   range = true,
+  bang = true,
   desc = "Annotate lines of a repository and export the notes",
   complete = function(arglead, line)
     local args = vim.split(line, "%s+", { trimempty = true })

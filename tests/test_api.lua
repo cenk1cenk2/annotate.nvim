@@ -6,7 +6,35 @@ local input = require("annotate.input")
 local store = require("annotate.store")
 
 local open = input.open
+local select = vim.ui.select
+local notify = vim.notify
 local opened
+
+--- Answers vim.ui.select with the first item whose text contains each wanted string in turn, returning the prompts it was asked.
+---@param wanted string[]
+---@return string[]
+local function answer(wanted)
+  local prompts = {}
+  vim.ui.select = function(items, opts, callback)
+    table.insert(prompts, opts.prompt)
+    local want = table.remove(wanted, 1)
+    for _, item in ipairs(items) do
+      if (opts.format_item and opts.format_item(item) or item):find(want, 1, true) then
+        return callback(item)
+      end
+    end
+    callback(nil)
+  end
+
+  return prompts
+end
+
+---@return string[]
+local function texts()
+  return vim.tbl_map(function(annotation)
+    return annotation.text
+  end, store.load(true))
+end
 
 local T = MiniTest.new_set({
   hooks = {
@@ -20,6 +48,8 @@ local T = MiniTest.new_set({
     end,
     post_case = function()
       input.open = open
+      vim.ui.select = select
+      vim.notify = notify
       require("annotate").setup()
       vim.cmd("silent! %bwipeout!")
     end,
@@ -48,6 +78,104 @@ T["an explicit type wins over default_type"] = function()
   api.add_file({ type = "question" })
 
   eq(opened.type, "question")
+end
+
+T["edit chooses between overlapping annotations"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })
+  local single = store.add({ file = "a.lua", line = 1, type = "question", text = "single" })
+  local prompts = answer({ "Question: single (a.lua:1)" })
+  local edit
+  input.open = function(opts, callback)
+    edit = opts
+    callback("praise", "changed")
+  end
+
+  api.edit()
+
+  eq(prompts, { "Annotations" })
+  eq(edit, { type = "question", text = "single" })
+  eq(store.get(single.id).text, "changed")
+  eq(texts(), { "range", "changed" })
+end
+
+T["delete removes only the chosen overlapping annotation"] = function()
+  require("annotate").setup({ confirm_delete = false })
+  store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })
+  store.add({ file = "a.lua", line = 1, type = "question", text = "single" })
+  answer({ "Bug: range (a.lua:1-2)" })
+
+  api.delete()
+
+  eq(texts(), { "single" })
+end
+
+T["delete removes all of the overlapping annotations"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })
+  store.add({ file = "a.lua", line = 1, type = "question", text = "single" })
+  store.add({ file = "a.lua", line = 0, type = "context", text = "file" })
+  local prompts = answer({ "All of them", "Yes" })
+
+  api.delete()
+
+  eq(prompts, { "Annotations", "Delete 2 annotations?" })
+  eq(texts(), { "file" })
+end
+
+T["delete confirms unless forced"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  local prompts = answer({ "No" })
+
+  api.delete()
+
+  eq(#prompts, 1)
+  eq(texts(), { "one" })
+
+  prompts = answer({})
+  api.delete({ force = true })
+
+  eq(prompts, {})
+  eq(texts(), {})
+end
+
+T["delete falls back to the whole-file annotation on line 1"] = function()
+  require("annotate").setup({ confirm_delete = false })
+  store.add({ file = "a.lua", line = 0, type = "context", text = "file" })
+  store.add({ file = "a.lua", line = 2, type = "bug", text = "two" })
+
+  api.delete()
+
+  eq(texts(), { "two" })
+end
+
+T["show opens a float with the annotation"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "broken\nmore" })
+
+  api.show()
+
+  local floats = vim.tbl_filter(function(win)
+    return vim.api.nvim_win_get_config(win).relative ~= ""
+  end, vim.api.nvim_list_wins())
+  eq(#floats, 1)
+  local content = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(floats[1]), 0, -1, false), "\n")
+  eq(content:find("Bug", 1, true) ~= nil, true)
+  eq(content:find("broken\nmore", 1, true) ~= nil, true)
+end
+
+T["show reports when there is no annotation under the cursor"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 2, type = "bug", text = "elsewhere" })
+  local messages = {}
+  vim.notify = function(message)
+    table.insert(messages, message)
+  end
+
+  api.show()
+
+  eq(messages, { "No annotation under the cursor." })
 end
 
 ---@param annotations annotate.Annotation[]
@@ -85,15 +213,11 @@ end
 
 T["delete action keeps the annotations when not confirmed"] = function()
   require("annotate").setup()
-  local select = vim.ui.select
-  vim.ui.select = function(_, _, callback)
-    callback("No")
-  end
+  answer({ "No" })
   local added = store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
   local p = picker({ added })
 
   api.actions.delete.action(p)
-  vim.ui.select = select
 
   eq(#store.load(true), 1)
   eq(p.refreshed, 0)

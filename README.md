@@ -14,7 +14,7 @@ Leave typed notes on lines, ranges and whole files of a git repository, on ordin
 
 - Neovim 0.11+, 0.13+ for file logging through `vim.log`.
 - `git` on the `PATH`.
-- [snacks.nvim](https://github.com/folke/snacks.nvim) is recommended for the input window, the picker and the preview. Without it the input falls back to `vim.ui.input` and the picker to `vim.ui.select`.
+- [snacks.nvim](https://github.com/folke/snacks.nvim) is recommended for the input window, the picker, the hover float and the preview. Without it the input falls back to `vim.ui.input`, the picker to `vim.ui.select` and the hover float to `vim.lsp.util.open_floating_preview`.
 - [diffview-plus.nvim](https://github.com/dlyongemallo/diffview-plus.nvim) is optional, for annotating revisions inside diff views.
 
 ## Installation
@@ -58,6 +58,13 @@ return {
         require("annotate").delete()
       end,
       desc = "Delete annotation",
+    },
+    {
+      "<leader>as",
+      function()
+        require("annotate").show()
+      end,
+      desc = "Show annotation",
     },
     {
       "<leader>ap",
@@ -170,7 +177,7 @@ require("annotate").setup({
   -- tried in order, the first source that matches a buffer wins
   sources = { "diffview", "repo" },
   archive_days = 30,
-  -- ask before deleting a note
+  -- ask before deleting a note, `force` skips it per call
   confirm_delete = true,
   store = {
     -- directory holding one store file per repository and the archive
@@ -218,6 +225,14 @@ require("annotate").setup({
       cancel = "q",
     },
   },
+  show = {
+    -- nil inherits input.border
+    border = nil,
+    max_width = 80,
+    max_height = 20,
+    -- a second show() enters the float
+    focusable = true,
+  },
   picker = {
     -- "snacks" | "select", nil uses snacks.nvim when available
     backend = nil,
@@ -228,6 +243,11 @@ require("annotate").setup({
       delete = "<C-d>",
       delete_all = "<C-x>",
       type = "<C-t>",
+    },
+    -- skip the confirmation of the delete and delete_all actions
+    force = {
+      delete = false,
+      delete_all = false,
     },
   },
   quickfix = {
@@ -282,9 +302,19 @@ The input is a floating snacks.nvim window with markdown highlighting. The title
 `<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. The `select` backend has no actions.
 
 - `edit` opens the input on the note and updates it in place.
-- `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set.
-- `delete_all` archives and clears every note after confirmation, like `clear`, and closes the picker.
+- `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set unless `picker.force.delete` is.
+- `delete_all` archives and clears every note after confirmation, skipped with `picker.force.delete_all`, like `clear`, and closes the picker.
 - `type` moves the selected notes to the next type in the configured order.
+
+### Show
+
+`require("annotate").show()` opens a float at the cursor, like a hover, with every note covering the cursor line: its type, location, the type's prompt and the full text, separated by a rule. It closes when the cursor moves or the buffer is left, or with `q` and `<Esc>`. Calling it again while it is open enters the float.
+
+### Overlapping Notes
+
+`show`, `edit` and `delete` act on every note covering the cursor line, ranges included. On line 1 a whole-file note counts when nothing else covers it. When several notes overlap, `edit` and `delete` ask which one through `vim.ui.select`, and `delete` also offers all of them.
+
+`delete({ force = true })` and `clear({ force = true })` skip the confirmation, never the choice between overlapping notes.
 
 ## Sources
 
@@ -403,13 +433,14 @@ require("annotate").setup({
 | `add` | Annotate the current line, or the given range with `:'<,'>Annotate add`. |
 | `file` | Annotate the current file as a whole. |
 | `edit` | Edit the note under the cursor. |
-| `delete` | Delete the note under the cursor after confirmation. |
+| `show` | Show the notes under the cursor in a float. |
+| `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |
 | `next` / `prev` | Jump to the next or previous note in the buffer. |
 | `pick` | Pick a note of the repository and jump to it. |
 | `quickfix` | Send the notes of the repository to the quickfix list. |
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |
-| `clear` | Archive the notes of the repository and clear them. |
+| `clear` | Archive the notes of the repository and clear them after confirmation, `clear!` without it. |
 
 ## Health
 

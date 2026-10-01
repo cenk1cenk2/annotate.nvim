@@ -3,6 +3,7 @@ local M = {
   add = require("annotate.api").add,
   add_file = require("annotate.api").add_file,
   edit = require("annotate.api").edit,
+  show = require("annotate.api").show,
   delete = require("annotate.api").delete,
   next = require("annotate.api").next,
   prev = require("annotate.api").prev,
