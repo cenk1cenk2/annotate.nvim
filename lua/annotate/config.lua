@@ -88,6 +88,7 @@ local M = {}
 ---@field headings annotate.ExportHeadings
 ---@field separator string
 ---@field label fun(type: annotate.Type): string
+---@field heading fun(annotation: annotate.Annotation, type: annotate.Type, location: string): string
 ---@field format? fun(annotations: annotate.Annotation[], opts: annotate.ExportOptions, config: annotate.Config): string
 
 ---@class annotate.Config
@@ -251,6 +252,9 @@ local defaults = {
     separator = "---",
     label = function(t)
       return ("[%s]"):format(t.name:upper())
+    end,
+    heading = function(annotation, t, location)
+      return annotation.file and ("### [%s] `%s`"):format(t.name:upper(), location) or ("### [%s] %s"):format(t.name:upper(), location)
     end,
     format = nil,
   },

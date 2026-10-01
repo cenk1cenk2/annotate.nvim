@@ -95,12 +95,12 @@ function M.render(annotations, opts)
       return a.created_at < b.created_at
     end)
 
-    for _, annotation in ipairs(grouped[t.key]) do
-      local text = vim.split(annotation.text, "\n", { plain = true })
-      table.insert(lines, annotation.file and ("- `%s` - %s"):format(M.location(annotation), text[1]) or ("- %s"):format(text[1]))
-      for i = 2, #text do
-        table.insert(lines, text[i] == "" and "" or "  " .. text[i])
+    for i, annotation in ipairs(grouped[t.key]) do
+      if i > 1 then
+        table.insert(lines, "")
       end
+      vim.list_extend(lines, { cfg.heading(annotation, t, M.location(annotation)), "" })
+      vim.list_extend(lines, vim.split(annotation.text, "\n", { plain = true }))
     end
   end
 

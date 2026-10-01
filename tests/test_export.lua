@@ -36,15 +36,22 @@ T["renders used types in config order with separators"] = function()
       "",
       "## [GENERAL]",
       "",
-      "- `a.lua:3` - first line",
-      "  second line",
+      "### [GENERAL] `a.lua:3`",
+      "",
+      "first line",
+      "second line",
       "",
       "---",
       "",
       "## [BUG]",
       "",
-      "- `a.lua:20-24` - range",
-      "- `b.lua:12` - second file",
+      "### [BUG] `a.lua:20-24`",
+      "",
+      "range",
+      "",
+      "### [BUG] `b.lua:12`",
+      "",
+      "second file",
       "",
     }, "\n")
   )
@@ -60,9 +67,9 @@ T["lists each comparison once only when a context exists"] = function()
 
   eq(markdown:find("## Compared\n\n- `abcdef12345` .. `LOCAL`\n\n## [QUESTION]", 1, true) ~= nil, true)
   eq(select(2, markdown:gsub("`abcdef12345` %.%. `LOCAL`", "")), 1)
-  eq(markdown:find("- `a.lua` - whole", 1, true) ~= nil, true)
-  eq(markdown:find("- `a.lua @ :0:` - staged", 1, true) ~= nil, true)
-  eq(markdown:find("- `a.lua:~5 @ abcdef12345` - why", 1, true) ~= nil, true)
+  eq(markdown:find("### [QUESTION] `a.lua`\n\nwhole", 1, true) ~= nil, true)
+  eq(markdown:find("### [QUESTION] `a.lua @ :0:`\n\nstaged", 1, true) ~= nil, true)
+  eq(markdown:find("### [QUESTION] `a.lua:~5 @ abcdef12345`\n\nwhy", 1, true) ~= nil, true)
   eq(markdown:find("---", 1, true), nil)
 end
 
@@ -79,7 +86,7 @@ T["filters to the requested types"] = function()
   }, { types = { "bug" } })
 
   eq(markdown:find("PRAISE", 1, true), nil)
-  eq(markdown:find("- `a.lua:1` - kept", 1, true) ~= nil, true)
+  eq(markdown:find("### [BUG] `a.lua:1`\n\nkept", 1, true) ~= nil, true)
 end
 
 T["uses the configured headings, separator and label"] = function()
@@ -102,7 +109,7 @@ T["uses the configured headings, separator and label"] = function()
   eq(markdown:find("## Description", 1, true), nil)
   eq(markdown:find("## Legend\n\n- bug: ", 1, true) ~= nil, true)
   eq(markdown:find("## Diff\n\n- `HEAD` .. `LOCAL`", 1, true) ~= nil, true)
-  eq(markdown:find("## bug\n\n- `a.lua:1` - broken\n\n***\n\n## praise\n", 1, true) ~= nil, true)
+  eq(markdown:find("## bug\n\n### [BUG] `a.lua:1`\n\nbroken\n\n***\n\n## praise\n", 1, true) ~= nil, true)
   eq(markdown:find("---", 1, true), nil)
 end
 
@@ -158,7 +165,7 @@ T["renders repository notes without a location, before file notes"] = function()
     note({ type = "general", line = 0, text = "about the whole repository" }),
   })
 
-  eq(markdown:match("## %[GENERAL%]\n\n(.-)\n$"), "- about the whole repository\n- `a.lua:3` - pinned")
+  eq(markdown:match("## %[GENERAL%]\n\n(.-)\n$"), "### [GENERAL] repository\n\nabout the whole repository\n\n### [GENERAL] `a.lua:3`\n\npinned")
 end
 
 return T

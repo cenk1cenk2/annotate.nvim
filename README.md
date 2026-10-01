@@ -317,6 +317,10 @@ require("annotate").setup({
     label = function(t)
       return ("[%s]"):format(t.name:upper())
     end,
+    -- fun(annotation, type, location): string, the heading above each note
+    heading = function(annotation, t, location)
+      return annotation.file and ("### [%s] `%s`"):format(t.name:upper(), location) or ("### [%s] %s"):format(t.name:upper(), location)
+    end,
     -- fun(annotations, opts, config): markdown, replaces the built-in document when set
     format = nil,
   },
@@ -423,7 +427,7 @@ A file is written to `export.dir`, named by `export.filename`, which defaults to
 
 `require("annotate").preview(opts)` shows the same markdown in a floating window without delivering it.
 
-The document has the following shape. Only types with at least one note appear, in the configured order. `Compared` only appears when a note was taken inside a diff view. Notes are sorted by file and line. Notes on a revision are marked with `~` and `@ <rev>`, whole-file notes only show the path.
+The document has the following shape. Only types with at least one note appear, in the configured order. `Compared` only appears when a note was taken inside a diff view. Each note is a `###` heading carrying its type and location, followed by its text as free-flowing markdown. Repository notes come first in their section, then file notes sorted by file and line. Notes on a revision are marked with `~` and `@ <rev>`, whole-file notes only show the path.
 
 ```markdown
 <export.prompt>
@@ -439,16 +443,28 @@ The document has the following shape. Only types with at least one note appear, 
 
 ## [GENERAL]
 
-- `lua/a.lua` - applies to the whole file
+### [GENERAL] repository
+
+Applies to the repository as a whole.
+
+### [GENERAL] `lua/a.lua`
+
+Applies to the whole file.
 
 ---
 
 ## [BUG]
 
-- `lua/a.lua:12` - single line
-- `lua/a.lua:12-18` - a range
-  with a second line of text
-- `lua/b.lua:~7 @ a1b2c3d4e5f` - on a commit
+### [BUG] `lua/a.lua:12-18`
+
+A range, with the note written as markdown:
+
+- a list
+- `inline code`
+
+### [BUG] `lua/b.lua:~7 @ a1b2c3d4e5f`
+
+On a commit.
 ```
 
 ### Custom Export Format
