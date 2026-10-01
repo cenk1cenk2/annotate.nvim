@@ -1,6 +1,8 @@
 local logger = vim.log.new and vim.log.new({ name = "annotate" })
 
-local function noop() end
+local function noop()
+  return nil
+end
 
 local M = logger and {
   trace = logger.trace,
