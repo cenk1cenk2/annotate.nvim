@@ -16,7 +16,7 @@ M.verdicts = {
 M.thread = [[
 mutation($review: ID!, $path: String!, $body: String!, $line: Int, $side: DiffSide, $startLine: Int, $startSide: DiffSide, $subjectType: PullRequestReviewThreadSubjectType) {
   addPullRequestReviewThread(input: { pullRequestReviewId: $review, path: $path, body: $body, line: $line, side: $side, startLine: $startLine, startSide: $startSide, subjectType: $subjectType }) {
-    thread { comments(first: 1) { nodes { databaseId url } } }
+    thread { id comments(first: 1) { nodes { id databaseId url } } }
   }
 }]]
 
@@ -27,8 +27,8 @@ end
 --- Calls `gh api` on the host of the remote, sending `body` as JSON, with every page flattened into one list when paginating.
 ---@param remote annotate.Remote
 ---@param endpoint string
----@param opts? { method?: string, body?: table, paginate?: boolean }
----@return any
+---@param opts? { method?: string, body?: table, paginate?: boolean, attempt?: boolean } attempt returns nil and the stderr instead of raising
+---@return any, string?
 function M.api(remote, endpoint, opts)
   opts = opts or {}
 
@@ -43,7 +43,12 @@ function M.api(remote, endpoint, opts)
     vim.list_extend(cmd, { "--paginate", "--slurp" })
   end
 
-  local result = require("annotate.publishers").json(cmd, opts.body)
+  local publishers = require("annotate.publishers")
+  if opts.attempt then
+    return publishers.attempt(cmd, opts.body)
+  end
+
+  local result = publishers.json(cmd, opts.body)
   if opts.paginate then
     return vim.iter(result or {}):flatten():totable()
   end
@@ -85,7 +90,7 @@ function M.resolve(remote)
     "--limit",
     "1",
     "--json",
-    "number,title,url,headRefName,baseRefName,headRefOid,baseRefOid",
+    "id,number,title,url,headRefName,baseRefName,headRefOid,baseRefOid",
   })[1]
   if not pr then
     return nil
@@ -100,6 +105,7 @@ function M.resolve(remote)
     target_branch = pr.baseRefName,
     head = pr.headRefOid,
     base = publishers.git({ "merge-base", pr.baseRefOid, pr.headRefOid }) or pr.baseRefOid,
+    ids = { pr_node_id = pr.id },
     remote = remote,
   }
   target.files = vim.tbl_map(function(file)
@@ -165,7 +171,7 @@ function M.post(target, items, record)
   end
 
   for _, item in ipairs(bodies) do
-    record(item, target.review.id, target.review.html_url)
+    record(item, { id = target.review.id, review_id = target.review.id, review_node_id = target.review.node_id, comment_url = target.review.html_url })
   end
 
   for _, item in ipairs(items) do
@@ -190,9 +196,67 @@ function M.post(target, items, record)
       local thread = vim.tbl_get(result or {}, "data", "addPullRequestReviewThread", "thread")
       local comment = thread and thread.comments.nodes[1] or error(("annotate: GitHub created no review thread for %s: %s"):format(item.location, vim.json.encode(result)), 0)
 
-      record(item, comment.databaseId, comment.url)
+      record(item, {
+        id = comment.databaseId,
+        comment_id = comment.databaseId,
+        comment_node_id = comment.id,
+        thread_node_id = thread.id,
+        review_id = target.review.id,
+        review_node_id = target.review.node_id,
+        comment_url = comment.url,
+      })
     end
   end
+end
+
+function M.update(target, item, entry)
+  local publishers = require("annotate.publishers")
+
+  local function fail(endpoint, err)
+    if publishers.missing(err) then
+      return nil
+    end
+    error(("gh api %s failed: %s"):format(endpoint, err), 0)
+  end
+
+  if entry.comment_id then
+    local endpoint = ("repos/%s/pulls/comments/%d"):format(target.remote.path, entry.comment_id)
+    local comment, err = M.api(target.remote, endpoint, { method = "PATCH", body = { body = item.body }, attempt = true })
+    if err then
+      return fail(endpoint, err)
+    end
+
+    return { comment_url = comment.html_url }
+  end
+
+  local endpoint = pulls(target, ("/reviews/%d"):format(entry.review_id or entry.id))
+  local review = target.review and target.review.id == (entry.review_id or entry.id) and target.review
+  if not review then
+    local err
+    review, err = M.api(target.remote, endpoint, { attempt = true })
+    if err then
+      return fail(endpoint, err)
+    end
+  end
+
+  local first, last = (review.body or ""):find(entry.body or "", 1, true)
+  if not (entry.body and first) then
+    return nil
+  end
+
+  local updated, err = M.api(target.remote, endpoint, {
+    method = "PUT",
+    body = { body = review.body:sub(1, first - 1) .. item.body .. review.body:sub(last + 1) },
+    attempt = true,
+  })
+  if err then
+    return fail(endpoint, err)
+  end
+  if target.review and target.review.id == updated.id then
+    target.review = updated
+  end
+
+  return {}
 end
 
 function M.submit(target, verdict, note)

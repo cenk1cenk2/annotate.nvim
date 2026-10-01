@@ -30,6 +30,7 @@
 ---@field base string sha the old side of the diff shows
 ---@field files annotate.DiffFile[]
 ---@field remote annotate.Remote
+---@field ids? table<string, string|integer> forge ids of the merge or pull request recorded with every posted entry
 
 ---@class annotate.PublishItem
 ---@field annotation annotate.Annotation
@@ -41,6 +42,7 @@
 ---@field in_diff? boolean the file is part of the diff
 ---@field fallback? boolean a line note that could not be positioned in the diff
 ---@field legend? boolean the legend of the types rather than a note
+---@field update? annotate.Posted the entry of a posted note whose body changed since
 ---@field rewrite? boolean the type prefills the selection, its fenced block becomes a suggestion in the diff
 ---@field side? "new"|"old"
 ---@field line? integer first line on `side`
@@ -63,6 +65,14 @@
 ---@field id integer|string draft note, review comment, or review id
 ---@field state "draft"|"published"
 ---@field at integer
+---@field hash string SHA-1 of the posted body
+---@field body string the posted body
+---@field [string] any further forge ids, like `note_id`, `discussion_id` or `comment_node_id`
+
+---@class annotate.PostedIds
+---@field id? integer|string
+---@field comment_url? string
+---@field [string] any
 
 ---@class annotate.Verdict
 ---@field key "comment"|"approve"|"request_changes"
@@ -75,10 +85,11 @@
 ---@field match fun(url: string): boolean
 ---@field resolve fun(remote: annotate.Remote): annotate.Target? nil when the branch has no open merge or pull request
 ---@field drafts fun(target: annotate.Target): table<string, true> ids of the drafts of the current user still pending on the target
----@field post fun(target: annotate.Target, items: annotate.PublishItem[], record: fun(item: annotate.PublishItem, id: integer|string, url?: string)) stages the items as drafts
+---@field post fun(target: annotate.Target, items: annotate.PublishItem[], record: fun(item: annotate.PublishItem, ids: annotate.PostedIds)) stages the items as drafts
+---@field update fun(target: annotate.Target, item: annotate.PublishItem, entry: annotate.Posted): annotate.PostedIds? changes the posted body in place, nil when it no longer exists on the forge
 ---@field target string what a review target is called, like `Merge request`
 ---@field route fun(item: annotate.PublishItem): "inline"|"suggestion"|"file"|"general"|"body", string where the item goes on the platform and the body sent there
----@field submit fun(target: annotate.Target, verdict: string, note?: string): table<string, string>? publishes every draft with the verdict, returning comment urls by draft id
+---@field submit fun(target: annotate.Target, verdict: string, note?: string): table<string, annotate.PostedIds>? publishes every draft with the verdict, returning what the drafts became by draft id
 
 ---@class annotate.PublishOptions
 ---@field publish? boolean submit the review instead of staging it, defaults to `external.submit`
@@ -391,6 +402,30 @@ function M.exec(cmd, stdin)
   return vim.trim(result.stdout or "")
 end
 
+--- Runs a command inside `M.async` and decodes its JSON output, returning nil and the stderr when it fails.
+---@param cmd string[]
+---@param body? table sent as JSON on stdin
+---@return any, string?
+function M.attempt(cmd, body)
+  local result = M.wait(function(callback)
+    M.run(cmd, body and vim.json.encode(body), callback)
+  end)
+  if result.code ~= 0 then
+    return nil, vim.trim(result.stderr or "")
+  end
+
+  local stdout = vim.trim(result.stdout or "")
+
+  return stdout ~= "" and vim.json.decode(stdout, { luanil = { object = true, array = true } }) or vim.empty_dict()
+end
+
+--- Whether the stderr of a failed CLI call says the thing does not exist.
+---@param stderr string
+---@return boolean
+function M.missing(stderr)
+  return stderr:find("404", 1, true) ~= nil or stderr:find("Not Found", 1, true) ~= nil
+end
+
 --- Runs a command inside `M.async` and decodes its JSON output.
 ---@param cmd string[]
 ---@param body? table sent as JSON on stdin
@@ -524,6 +559,29 @@ local function plural(count, noun)
   return ("%d %s%s"):format(count, noun, count == 1 and "" or "s")
 end
 
+--- The first line that differs between two bodies, shortened.
+---@param old? string
+---@param new string
+---@return string
+function M.change(old, new)
+  if not old then
+    return "body changed"
+  end
+
+  local function short(line)
+    return vim.fn.strcharlen(line) > 40 and vim.fn.strcharpart(line, 0, 39) .. "…" or line
+  end
+
+  local before, after = vim.split(old, "\n", { plain = true }), vim.split(new, "\n", { plain = true })
+  for index = 1, math.max(#before, #after) do
+    if before[index] ~= after[index] then
+      return ("line %d: `%s` -> `%s`"):format(index, short(before[index] or ""), short(after[index] or ""))
+    end
+  end
+
+  return "body changed"
+end
+
 --- What a destination is called in the summary.
 ---@param item annotate.PublishItem
 ---@return string
@@ -553,7 +611,12 @@ function M.summary(publisher, target, items, skipped, submit, legend)
 
   local rows = {}
   for _, item in ipairs(items) do
-    rows[item.annotation] = { "- Destination: " .. destination(item), "- Status: new", "", item.body }
+    rows[item.annotation] = {
+      "- Destination: " .. destination(item),
+      item.update and ("- Status: update, %s on %s, %s"):format(item.update.state, target.reference, M.change(item.update.body, item.body)) or "- Status: new",
+      "",
+      item.body,
+    }
   end
   for _, skip in ipairs(skipped) do
     rows[skip.annotation] = { ("- Status: skipped, %s on %s %s"):format(skip.entry.state, target.reference, skip.entry.comment_url or skip.entry.url) }
@@ -572,7 +635,14 @@ function M.summary(publisher, target, items, skipped, submit, legend)
     return item.rewrite and item.destination ~= "suggestion"
   end)
 
+  local updates = count(function(item)
+    return item.update ~= nil
+  end)
+
   local totals = {}
+  if updates > 0 then
+    table.insert(totals, plural(updates, "update"))
+  end
   if suggestions > 0 then
     table.insert(totals, plural(suggestions, "suggestion"))
   end
@@ -772,30 +842,33 @@ function M.publish(opts)
     end
 
     local drafts = publisher.drafts(target)
-    local pending, skipped = {}, {}
-    for _, annotation in ipairs(legend and #annotations > 0 and vim.list_extend({ M.legend(annotations) }, annotations) or annotations) do
+    local candidates = legend and #annotations > 0 and vim.list_extend({ M.legend(annotations) }, annotations) or annotations
+    for _, annotation in ipairs(candidates) do
       local entry, index = M.posted(annotation, publisher.name, target)
       if entry and entry.state == "draft" and not drafts[tostring(entry.id)] then
         local posted = vim.deepcopy(annotation.posted)
         table.remove(posted, index)
         record(annotation, posted)
-        entry = nil
-      end
-
-      if entry then
-        table.insert(skipped, { annotation = annotation, entry = entry })
-      else
-        table.insert(pending, annotation)
       end
     end
 
-    if #pending == 0 and not submit then
-      return notify(("Every annotation is already posted to %s %s, %s skipped."):format(target.reference, target.title, plural(#skipped, "note")))
-    end
-
-    local items = M.plan(pending, target, legend)
-    for _, item in ipairs(items) do
+    local items, skipped = {}, {}
+    for _, item in ipairs(M.plan(candidates, target, legend)) do
       item.destination, item.body = publisher.route(item)
+
+      local entry = M.posted(item.annotation, publisher.name, target)
+      if not entry then
+        table.insert(items, item)
+      elseif not entry.hash or entry.hash == M.sha1(item.body) then
+        table.insert(skipped, { annotation = item.annotation, entry = entry })
+      else
+        item.update = entry
+        table.insert(items, item)
+      end
+    end
+
+    if #items == 0 and not submit then
+      return notify(("Every annotation is already posted to %s %s, %s skipped."):format(target.reference, target.title, plural(#skipped, "note")))
     end
 
     if not opts.force and cfg.summary then
@@ -817,13 +890,33 @@ function M.publish(opts)
 
     notify(("Publishing %s to %s %s %s."):format(plural(#items, "note"), publisher.label, target.reference, target.title))
 
+    local fresh, updated = {}, 0
+    for _, item in ipairs(items) do
+      local entry = item.update
+      if entry then
+        local ids = publisher.update(target, item, entry)
+        local posted = vim.deepcopy(item.annotation.posted)
+        local _, index = M.posted(item.annotation, publisher.name, target)
+        if ids then
+          updated = updated + 1
+          posted[index] = vim.tbl_extend("force", posted[index], ids, { hash = M.sha1(item.body), body = item.body, at = os.time() })
+        else
+          table.remove(posted, index)
+          table.insert(fresh, item)
+        end
+        record(item.annotation, posted)
+      else
+        table.insert(fresh, item)
+      end
+    end
+
     local posted = 0
-    publisher.post(target, items, function(item, id, url)
+    publisher.post(target, fresh, function(item, ids)
       posted = posted + 1
       record(
         item.annotation,
         vim.list_extend(vim.deepcopy(item.annotation.posted or {}), {
-          {
+          vim.tbl_extend("force", target.ids or {}, ids, {
             platform = publisher.name,
             remote_url = remote.url,
             project = remote.path,
@@ -833,22 +926,24 @@ function M.publish(opts)
             title = target.title,
             reference = target.reference,
             url = target.url,
-            comment_url = url,
-            id = id,
             state = "draft",
+            hash = M.sha1(item.body),
+            body = item.body,
             at = os.time(),
-          },
+          }),
         })
       )
     end)
 
     if submit then
-      local urls = publisher.submit(target, verdict, note) or {}
+      local published = publisher.submit(target, verdict, note) or {}
       for _, annotation in ipairs(vim.list_extend({ store.legend }, store.all())) do
         local entry = M.posted(annotation, publisher.name, target)
         if entry and entry.state == "draft" then
           entry.state = "published"
-          entry.comment_url = entry.comment_url or urls[tostring(entry.id)]
+          for key, value in pairs(published[tostring(entry.id)] or {}) do
+            entry[key] = entry[key] or value
+          end
         end
       end
       store.save()
@@ -863,11 +958,12 @@ function M.publish(opts)
 
     log.info(("published: platform=%s target=%s #posted=%d #skipped=%d verdict=%s"):format(publisher.name, target.id, posted, #skipped, tostring(verdict)))
     notify(
-      ("%s %s: %d %s, %d skipped as already posted, %d fell back to general comments%s%s."):format(
+      ("%s %s: %d %s, %d updated, %d skipped as already posted, %d fell back to general comments%s%s."):format(
         target.reference,
         target.title,
         posted,
         submit and "submitted" or "staged",
+        updated,
         #skipped,
         fallbacks,
         unsuggested > 0 and (", %s without a suggestion"):format(plural(unsuggested, "rewrite")) or "",

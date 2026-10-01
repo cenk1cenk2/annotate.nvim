@@ -604,14 +604,22 @@ A note of a `prefill = "selection"` type, like `rewrite`, positioned on the new 
 
 ### Staging and Submitting
 
-Before anything is posted, a float shows the plan in the shape of the export: the target with its branches, URL and head, the totals, whether the legend is on and its text, then every note with its destination, whether it is new or skipped, and the exact body that is sent. `<CR>` or `y` proceeds, `q`, `<Esc>` or `n` cancels (`external.summary_keys`). `opts.force` or `external.summary = false` skips it.
+Before anything is posted, a float shows the plan in the shape of the export: the target with its branches, URL and head, the totals, whether the legend is on and its text, then every note with its destination, whether it is new, an update or skipped, and the exact body that is sent. `<CR>` or `y` proceeds, `q`, `<Esc>` or `n` cancels (`external.summary_keys`). `opts.force` or `external.summary = false` skips it.
 
 - Staging, the default, leaves everything as drafts only you can see: GitLab draft notes, or a pending GitHub review. Nothing reaches the author.
 - Submitting (`opts.publish = true`, `external.submit`, or `:Annotate publish!`) asks for the verdict and an optional summary note, then publishes every draft at once, including the ones staged earlier. GitLab offers Comment and Approve: the drafts are published together, the note is posted as a comment, and Approve approves the merge request at its head. GitHub offers Comment, Approve and Request changes: the pending review receives the new comments and is submitted with the verdict and the note as its body. `opts.verdict` and `opts.note` answer up front, cancelling the verdict cancels the submit.
 
-### Duplicates
+### Duplicates and Updates
 
-Every posted note records where it went under `posted`: platform, project, merge or pull request, branches, title, URLs, the comment id and whether it is still a draft. A note already posted to the same merge or pull request is skipped, unless its draft was deleted on the forge in the meantime, in which case it is posted again. A submit marks the staged drafts as published without posting them again. A note can still go to another merge or pull request. `show()` lists where a note was posted, the picker marks it.
+Every posted note records where it went under `posted`: platform, project, merge or pull request, branches, title, URLs, whether it is still a draft, the body that was sent with its SHA-1, and every id the forge returned for it. On GitLab that is the draft note id, then the note and discussion ids once published, along with the merge request's global id, iid and project id. On GitHub it is the review id and node id, the comment id and node id, the thread node id and the pull request node id.
+
+Publishing to the same merge or pull request again compares each note with what was sent:
+
+- An unchanged note is skipped.
+- A changed note is updated in place: `PUT .../draft_notes/:id` or `PUT .../notes/:id` on GitLab, `PATCH .../pulls/comments/:id` for a comment or `PUT .../reviews/:id` for its part of the review body on GitHub. The summary marks it `update` with the first changed line.
+- A note whose draft or comment was deleted on the forge is posted again.
+
+A submit marks the staged drafts as published without posting them again. A note can still go to another merge or pull request. `show()` lists where a note was posted, the picker marks it.
 
 `opts.types` publishes a subset of types, `opts.clear` archives the notes once everything was posted.
 

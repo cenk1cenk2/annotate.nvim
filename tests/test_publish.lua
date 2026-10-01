@@ -46,7 +46,9 @@ local function gitlab()
       return { { iid = forge.iid } }
     elseif path == ("merge_requests/%d"):format(forge.iid) then
       return {
+        id = 9000 + forge.iid,
         iid = forge.iid,
+        project_id = 42,
         title = "Add the thing",
         web_url = ("https://gitlab.example.com/group/sub/project/-/merge_requests/%d"):format(forge.iid),
         source_branch = "feature",
@@ -63,17 +65,39 @@ local function gitlab()
       table.insert(forge.drafts, draft)
 
       return draft
+    elseif path:match("/draft_notes/%d+$") then
+      local draft = vim.iter(forge.drafts):find(function(d)
+        return d.id == tonumber(path:match("(%d+)$"))
+      end)
+      if not draft then
+        return nil, "glab: 404 Not Found"
+      end
+      draft.note = body.note
+
+      return draft
     elseif path:match("/bulk_publish$") then
       for _, draft in ipairs(forge.drafts) do
-        table.insert(forge.notes, 1, { id = draft.id + 1000, body = draft.note })
+        table.insert(forge.notes, { id = draft.id + 1000, body = draft.note })
       end
       forge.drafts = {}
     elseif path:match("/notes$") then
-      table.insert(forge.notes, 1, { id = 1, body = body.body })
+      table.insert(forge.notes, { id = 1, body = body.body })
 
       return {}
-    elseif path:match("/notes%?") then
-      return forge.notes
+    elseif path:match("/notes/%d+$") then
+      local note = vim.iter(forge.notes):find(function(n)
+        return n.id == tonumber(path:match("(%d+)$"))
+      end)
+      if not note then
+        return nil, "glab: 404 Not Found"
+      end
+      note.body = body.body
+
+      return note
+    elseif path:match("/discussions%?") then
+      return vim.tbl_map(function(n)
+        return { id = "d" .. n.id, notes = { n } }
+      end, forge.notes)
     elseif path:match("/approve$") then
       forge.approved = body.sha
     end
@@ -105,13 +129,29 @@ local function github()
       forge.review.body = body.body
 
       return forge.review
+    elseif endpoint:match("^repos/owner/repo/pulls/comments/%d+$") then
+      local comment = vim.iter(forge.comments):find(function(c)
+        return c.id == tonumber(endpoint:match("(%d+)$"))
+      end)
+      if not comment then
+        return nil, "gh: Not Found (HTTP 404)"
+      end
+      comment.body = body.body
+
+      return { id = comment.id, html_url = "https://github.com/c/" .. comment.id }
     elseif endpoint:match("/events$") then
       forge.submitted = body
     elseif endpoint == "graphql" then
       forge.next = forge.next + 1
       table.insert(forge.comments, { id = forge.next })
 
-      return { data = { addPullRequestReviewThread = { thread = { comments = { nodes = { { databaseId = forge.next, url = "https://github.com/c/" .. forge.next } } } } } } }
+      return {
+        data = {
+          addPullRequestReviewThread = {
+            thread = { id = "T" .. forge.next, comments = { nodes = { { id = "C" .. forge.next, databaseId = forge.next, url = "https://github.com/c/" .. forge.next } } } },
+          },
+        },
+      }
     end
   end
 
@@ -135,6 +175,7 @@ local function stub(forge)
         code = 0,
         stdout = vim.json.encode({
           {
+            id = "PR_7",
             number = forge.number,
             title = "Add the thing",
             url = "https://github.com/owner/repo/pull/7",
@@ -157,7 +198,12 @@ local function stub(forge)
     local body = stdin and vim.json.decode(stdin, { luanil = { object = true, array = true } })
     table.insert(calls, { cmd = cmd, method = method, endpoint = cmd[5], body = body })
 
-    callback({ code = 0, stdout = vim.json.encode(forge.handle(cmd[5], method, body) or vim.empty_dict()), stderr = "" })
+    local value, err = forge.handle(cmd[5], method, body)
+    if err then
+      return callback({ code = 1, stdout = "", stderr = err })
+    end
+
+    callback({ code = 0, stdout = vim.json.encode(value or vim.empty_dict()), stderr = "" })
   end
 end
 
@@ -378,7 +424,7 @@ T["a rewrite outside the diff posts a plain block and is counted"] = function()
   eq(threads[2].body.variables.subjectType, "FILE")
   eq(prompts[1]:find("- To post: 2 (1 suggestion, 1 outside the diff, 1 rewrite without a suggestion)", 1, true) ~= nil, true)
   eq(prompts[1]:find("- Destination: suggestion", 1, true) ~= nil, true)
-  eq(messages[#messages], "#7 Add the thing: 2 staged, 0 skipped as already posted, 1 fell back to general comments, 1 rewrite without a suggestion.")
+  eq(messages[#messages], "#7 Add the thing: 2 staged, 0 updated, 0 skipped as already posted, 1 fell back to general comments, 1 rewrite without a suggestion.")
 end
 
 T["bodies carry no type label unless the legend is on"] = function()
@@ -462,6 +508,90 @@ T["the summary shows the legend and its text"] = function()
     true
   ) ~= nil, true)
   eq(prompts[1]:find("**[BUG]**\n\nbroken", 1, true) ~= nil, true)
+end
+
+T["GitLab entries record the forge ids and the posted body"] = function()
+  stub(gitlab())
+  local annotation = add({ file = "a.lua", line = 2 })
+
+  publishers.publish()
+  store.load(true)
+  local entry = store.get(annotation.id).posted[1]
+  eq({ entry.id, entry.draft_id, entry.mr_id, entry.iid, entry.project_id, entry.body, entry.hash }, { 101, 101, 9005, 5, 42, "broken", publishers.sha1("broken") })
+
+  publishers.publish({ publish = true, verdict = "comment", note = "" })
+  store.load(true)
+  entry = store.get(annotation.id).posted[1]
+  eq({ entry.state, entry.note_id, entry.discussion_id }, { "published", 1101, "d1101" })
+end
+
+T["a changed draft is updated in place"] = function()
+  local forge = gitlab()
+  stub(forge)
+  local annotation = add({ file = "a.lua", line = 2 })
+  publishers.publish()
+  store.update(annotation.id, { text = "really broken" })
+  config.setup({ external = { summary = true } })
+  local prompts = {}
+  answer({ "Proceed" }, prompts)
+
+  publishers.publish()
+
+  eq(#requests("POST", "draft_notes$"), 1)
+  eq(requests("PUT", "draft_notes/101$")[1].body, { note = "really broken" })
+  eq(forge.drafts[1].note, "really broken")
+  eq(prompts[1]:find("- Status: update, draft on !5, line 1: `broken` -> `really broken`", 1, true) ~= nil, true)
+  eq(prompts[1]:find("- To post: 1 (1 update)", 1, true) ~= nil, true)
+  store.load(true)
+  eq({ #store.get(annotation.id).posted, store.get(annotation.id).posted[1].hash }, { 1, publishers.sha1("really broken") })
+  eq(messages[#messages], "!5 Add the thing: 0 staged, 1 updated, 0 skipped as already posted, 0 fell back to general comments.")
+end
+
+T["a changed published note is updated, and posted again when it was deleted"] = function()
+  local forge = gitlab()
+  stub(forge)
+  local annotation = add({ file = "a.lua", line = 2 })
+  publishers.publish({ publish = true, verdict = "comment", note = "" })
+
+  store.update(annotation.id, { text = "edited" })
+  publishers.publish()
+
+  eq(requests("PUT", "notes/1101$")[1].body, { body = "edited" })
+  eq(forge.notes[1].body, "edited")
+
+  forge.notes = {}
+  store.update(annotation.id, { text = "edited again" })
+  publishers.publish()
+
+  eq(#requests("POST", "draft_notes$"), 2)
+  store.load(true)
+  local posted = store.get(annotation.id).posted
+  eq({ #posted, posted[1].state, posted[1].body }, { 1, "draft", "edited again" })
+end
+
+T["GitHub records the forge ids and updates changed comments and review body parts"] = function()
+  remote("git@github.com:owner/repo.git")
+  stub(github())
+  local inline = add({ file = "a.lua", line = 2 })
+  local overall = add({ line = 0, text = "overall" })
+  add({ line = 0, type = "question", text = "kept" })
+
+  publishers.publish()
+  store.load(true)
+  local entry = store.get(inline.id).posted[1]
+  eq(
+    { entry.id, entry.comment_id, entry.comment_node_id, entry.thread_node_id, entry.review_id, entry.review_node_id, entry.pr_node_id },
+    { 202, 202, "C202", "T202", 201, "R201", "PR_7" }
+  )
+  eq({ store.get(overall.id).posted[1].review_id, store.get(overall.id).posted[1].body }, { 201, "overall" })
+
+  store.update(inline.id, { text = "fixed wording" })
+  store.update(overall.id, { text = "overall, revised" })
+  publishers.publish()
+
+  eq(requests("PATCH", "pulls/comments/202$")[1].body, { body = "fixed wording" })
+  eq(requests("PUT", "/reviews/201$")[1].body, { body = "overall, revised\n\nkept" })
+  eq(#requests("GET", "^graphql$"), 1)
 end
 
 T["refuses when HEAD is not the head of the merge request"] = function()
@@ -549,7 +679,7 @@ T["GitLab staging creates positioned and general drafts without publishing them"
   })
   eq(entry.url, "https://gitlab.example.com/group/sub/project/-/merge_requests/5")
   eq(store.get(outside.id).posted[1].id, 102)
-  eq(messages[#messages], "!5 Add the thing: 2 staged, 0 skipped as already posted, 1 fell back to general comments.")
+  eq(messages[#messages], "!5 Add the thing: 2 staged, 0 updated, 0 skipped as already posted, 1 fell back to general comments.")
 end
 
 T["GitLab submit publishes the drafts, posts the note and approves"] = function()
@@ -613,7 +743,7 @@ T["a submit after staging publishes the drafts without posting them again"] = fu
   store.load(true)
   eq(#store.get(annotation.id).posted, 1)
   eq(store.get(annotation.id).posted[1].state, "published")
-  eq(messages[#messages]:find("0 submitted, 1 skipped as already posted", 1, true) ~= nil, true)
+  eq(messages[#messages]:find("0 submitted, 0 updated, 1 skipped as already posted", 1, true) ~= nil, true)
 end
 
 T["notes already posted to the same target are skipped"] = function()
