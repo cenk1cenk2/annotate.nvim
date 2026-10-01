@@ -220,14 +220,14 @@ require("annotate").setup({
     border = "rounded",
     -- snacks.nvim window position
     position = "float",
-    -- string or fun(type, keys, types, index), re-evaluated when cycling types
+    -- string or fun(type, keys, types, index), re-evaluated when cycling types, only the current type when it does not fit
     title = function(_, _, types, index)
       local names = {}
       for i, t in ipairs(types) do
         table.insert(names, i == index and ("[%s %s]"):format(t.icon, t.name) or ("%s %s"):format(t.icon, t.name))
       end
 
-      return (" %s "):format(table.concat(names, " · "))
+      return table.concat(names, " · ")
     end,
     title_pos = "center",
     -- string or fun(type, keys, types, index), evaluated when the window opens
@@ -287,7 +287,7 @@ require("annotate").setup({
   export = {
     -- "file" | "clipboard" | "both" | fun(markdown, annotations)
     to = "both",
-    prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what I expect for that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note, and do what the note's type asks. Questions are for us to settle together, so bring them back to me instead of deciding them yourself. When you finish, report back item by item: what you changed, where you applied an issue, general or praise note, what you decided on each suggestion and why, and the questions still waiting on me.",
+    prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what to do with that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note. Bring back anything that needs me one at a time, with its file, line and a one-line summary of the code there. When you finish, report back item by item.",
     clipboard_message = "Here are my review notes for this repository. Read the attached file and work through every item as it describes.",
     -- directory exported files are written to
     dir = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate"),

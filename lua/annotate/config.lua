@@ -186,7 +186,7 @@ local defaults = {
         table.insert(names, i == index and ("[%s %s]"):format(t.icon, t.name) or ("%s %s"):format(t.icon, t.name))
       end
 
-      return (" %s "):format(table.concat(names, " · "))
+      return table.concat(names, " · ")
     end,
     title_pos = "center",
     footer = function(_, keys)
@@ -234,7 +234,7 @@ local defaults = {
   },
   export = {
     to = "both",
-    prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what I expect for that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note, and do what the note's type asks. Questions are for us to settle together, so bring them back to me instead of deciding them yourself. When you finish, report back item by item: what you changed, where you applied an issue, general or praise note, what you decided on each suggestion and why, and the questions still waiting on me.",
+    prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what to do with that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note. Bring back anything that needs me one at a time, with its file, line and a one-line summary of the code there. When you finish, report back item by item.",
     clipboard_message = "Here are my review notes for this repository. Read the attached file and work through every item as it describes.",
     dir = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate"),
     filename = function(repository)

@@ -34,10 +34,5 @@ tasks:
     desc: Run the test suite.
     deps:
       - deps
-    env:
-      XDG_DATA_HOME: "{{.ROOT_DIR}}/.tests/data"
-      XDG_STATE_HOME: "{{.ROOT_DIR}}/.tests/state"
-      XDG_CACHE_HOME: "{{.ROOT_DIR}}/.tests/cache"
-      XDG_CONFIG_HOME: "{{.ROOT_DIR}}/.tests/config"
     cmds:
-      - nvim --headless --noplugin -u tests/minimal_init.lua -c "lua MiniTest.run()"
+      - env XDG_DATA_HOME="{{.ROOT_DIR}}/.tests/data" XDG_STATE_HOME="{{.ROOT_DIR}}/.tests/state" XDG_CACHE_HOME="{{.ROOT_DIR}}/.tests/cache" XDG_CONFIG_HOME="{{.ROOT_DIR}}/.tests/config" TMPDIR="{{.ROOT_DIR}}/.tests/tmp" nvim --headless --noplugin -u tests/minimal_init.lua -c "lua MiniTest.run()"

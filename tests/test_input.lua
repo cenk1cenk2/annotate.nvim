@@ -22,7 +22,15 @@ local T = MiniTest.new_set({
 T["title lists every type with the current one in brackets"] = function()
   local types = config.options.types
 
-  eq(config.resolve(config.options.input.title, types[2], config.options.input.keys, types, 2), " 1 A · [2 B] · 3 C ")
+  eq(config.resolve(config.options.input.title, types[2], config.options.input.keys, types, 2), "1 A · [2 B] · 3 C")
+end
+
+T["title falls back to the current type when it does not fit"] = function()
+  local input = require("annotate.input")
+  local types = config.options.types
+
+  eq(input.title(types, 2, 40), "1 A · [2 B] · 3 C")
+  eq(input.title(types, 2, 10), "‹ [2 B] ›")
 end
 
 T["footer names both cycle keys"] = function()
