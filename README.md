@@ -4,7 +4,7 @@ Leave typed notes on lines, ranges and whole files of a git repository, on ordin
 
 ## Features
 
-- One store per repository, kept under `stdpath("data")/annotate`, archived instead of deleted when cleared, with archives pruned after `archive_days` (30 by default).
+- One store per repository, kept under `store.dir` (`stdpath("data")/annotate` by default), archived instead of deleted when cleared, with archives pruned after `archive_days` (30 by default).
 - Typed notes, where every type carries the instruction the agent receives for it.
 - Notes follow their lines while you edit; the new positions are written back on save.
 - Source based system, where each source decides which buffers it can annotate and how a line maps to a repository location. Ordinary files and [diffview](https://github.com/dlyongemallo/diffview-plus.nvim) buffers are supported out of the box.
@@ -165,24 +165,97 @@ require("annotate").setup({
       prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
     },
   },
+  -- key of the type a new note starts on, nil for the first entry of types
+  default_type = nil,
   -- tried in order, the first source that matches a buffer wins
   sources = { "diffview", "repo" },
   archive_days = 30,
+  -- ask before deleting a note
+  confirm_delete = true,
+  store = {
+    -- directory holding one store file per repository and the archive
+    dir = vim.fs.joinpath(vim.fn.stdpath("data"), "annotate"),
+  },
+  marks = {
+    -- type icon in the sign column
+    sign = true,
+    -- tinted background on annotated lines
+    line_highlight = true,
+    -- summary at the end of the line, or above the first line for whole-file notes
+    virtual_text = true,
+    -- text of the summary
+    virtual_text_format = function(annotation, t)
+      return ("%s %s: %s"):format(t.icon, t.name, vim.split(annotation.text, "\n", { plain = true })[1])
+    end,
+    -- share of the type color mixed into the Normal background for the line highlight
+    blend = 0.15,
+    -- extmark priority of signs, line highlights and virtual text
+    priority = 4096,
+  },
   input = {
     width = 80,
     height = 10,
     border = "rounded",
+    -- snacks.nvim window position
+    position = "float",
+    -- string or fun(type, keys), re-evaluated when cycling types
+    title = function(t)
+      return (" %s %s "):format(t.icon, t.name)
+    end,
+    title_pos = "center",
+    -- string or fun(type, keys), evaluated when the window opens
+    footer = function(_, keys)
+      return (" %s cycle  %s submit  %s cancel "):format(keys.cycle, keys.submit, keys.cancel)
+    end,
+    footer_pos = "center",
+    -- filetype of the input buffer
+    filetype = "annotate",
+    -- markdown treesitter highlighting in the input buffer
+    markdown = true,
     keys = {
       cycle = "<C-n>",
       submit = "<C-s>",
       cancel = "q",
     },
   },
+  picker = {
+    -- "snacks" | "select", nil uses snacks.nvim when available
+    backend = nil,
+    title = "Annotations",
+  },
+  quickfix = {
+    title = "annotate",
+    -- open the quickfix window after filling it
+    open = true,
+  },
+  notify = {
+    -- title of the notifications
+    title = "annotate",
+  },
   export = {
     -- "file" | "clipboard" | "both" | fun(markdown, annotations)
     to = "both",
     prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what I expect for that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note, and do what the note's type asks. Questions are for us to settle together, so bring them back to me instead of deciding them yourself. When you finish, report back item by item: what you changed, where you applied a general or praise note, what you decided on each suggestion and why, and the questions still waiting on me.",
     clipboard_message = "Here are my review notes for this repository. Read the attached file and work through every item as it describes.",
+    -- directory exported files are written to
+    dir = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate"),
+    -- string or fun(repository), name of the exported file
+    filename = function(repository)
+      return ("%s-%s.md"):format(repository, os.date("%Y%m%d-%H%M%S"))
+    end,
+    -- section headings of the document
+    headings = {
+      description = "Description",
+      compared = "Compared",
+    },
+    -- line between the type sections
+    separator = "---",
+    -- how a type is named in the document
+    label = function(t)
+      return ("[%s]"):format(t.name:upper())
+    end,
+    -- fun(annotations, opts, config): markdown, replaces the built-in document when set
+    format = nil,
   },
 })
 ```
@@ -252,7 +325,7 @@ annotate.setup({
 - `types`: a subset of type keys to export.
 - `clear`: archives the notes after exporting.
 
-A file is written to `<tmpdir>/annotate/<repository>-<YYYYmmdd-HHMMSS>.md`. When a file is written, the clipboard (`+` and `*`) receives `export.clipboard_message` followed by a blank line and `@<path>`, otherwise it receives the whole markdown.
+A file is written to `export.dir`, named by `export.filename`, which defaults to `<tmpdir>/annotate/<repository>-<YYYYmmdd-HHMMSS>.md`. When a file is written, the clipboard (`+` and `*`) receives `export.clipboard_message` followed by a blank line and `@<path>`, otherwise it receives the whole markdown.
 
 `require("annotate").preview(opts)` shows the same markdown in a floating window without delivering it.
 
@@ -282,6 +355,27 @@ The document has the following shape. Only types with at least one note appear, 
 - `lua/a.lua:12-18` - a range
   with a second line of text
 - `lua/b.lua:~7 @ a1b2c3d4e5f` - on a commit
+```
+
+### Custom Export Format
+
+`export.format` replaces the built-in document as a whole. It receives the annotations, the export options and the configuration, and returns the markdown that gets delivered and previewed.
+
+```lua
+require("annotate").setup({
+  export = {
+    format = function(annotations, opts, config)
+      local lines = { opts.prompt or config.export.prompt, "" }
+      for _, annotation in ipairs(annotations) do
+        if not opts.types or vim.list_contains(opts.types, annotation.type) then
+          table.insert(lines, ("- %s `%s:%d` %s"):format(annotation.type, annotation.file, annotation.line, annotation.text))
+        end
+      end
+
+      return table.concat(lines, "\n") .. "\n"
+    end,
+  },
+})
 ```
 
 ## Commands

@@ -1,7 +1,9 @@
+local H = dofile("tests/helpers.lua")
 local eq = MiniTest.expect.equality
 
 local config = require("annotate.config")
 local export = require("annotate.export")
+local store = require("annotate.store")
 
 local T = MiniTest.new_set({
   hooks = {
@@ -78,6 +80,72 @@ T["filters to the requested types"] = function()
 
   eq(markdown:find("PRAISE", 1, true), nil)
   eq(markdown:find("- `a.lua:1` - kept", 1, true) ~= nil, true)
+end
+
+T["uses the configured headings, separator and label"] = function()
+  config.setup({
+    export = {
+      prompt = "PROMPT",
+      headings = { description = "Legend", compared = "Diff" },
+      separator = "***",
+      label = function(t)
+        return t.key
+      end,
+    },
+  })
+
+  local markdown = export.render({
+    note({ type = "bug", file = "a.lua", line = 1, text = "broken", context = { left = "HEAD", right = "LOCAL" } }),
+    note({ type = "praise", file = "a.lua", line = 2, text = "nice" }),
+  })
+
+  eq(markdown:find("## Description", 1, true), nil)
+  eq(markdown:find("## Legend\n\n- praise: ", 1, true) ~= nil, true)
+  eq(markdown:find("## Diff\n\n- `HEAD` .. `LOCAL`", 1, true) ~= nil, true)
+  eq(markdown:find("## praise\n\n- `a.lua:2` - nice\n\n***\n\n## bug\n", 1, true) ~= nil, true)
+  eq(markdown:find("---", 1, true), nil)
+end
+
+T["format replaces the built-in renderer"] = function()
+  local received
+  config.setup({
+    export = {
+      prompt = "PROMPT",
+      format = function(annotations, opts, c)
+        received = { annotations = annotations, opts = opts, prompt = c.export.prompt }
+
+        return "custom"
+      end,
+    },
+  })
+
+  local annotations = { note({ type = "bug", file = "a.lua", line = 1, text = "broken" }) }
+
+  eq(export.render(annotations, { types = { "bug" } }), "custom")
+  eq(received, { annotations = annotations, opts = { types = { "bug" } }, prompt = "PROMPT" })
+end
+
+T["writes the file to export.dir with export.filename"] = function()
+  local dir = vim.fn.tempname()
+  local repository
+  config.setup({
+    export = {
+      to = "file",
+      dir = dir,
+      filename = function(name)
+        repository = name
+
+        return "notes.md"
+      end,
+    },
+  })
+  local root = H.repo()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "broken" })
+
+  local markdown = export.export()
+
+  eq(repository, vim.fs.basename(root))
+  eq(table.concat(vim.fn.readfile(vim.fs.joinpath(dir, "notes.md")), "\n") .. "\n", markdown)
 end
 
 T["formats revision ranges"] = function()

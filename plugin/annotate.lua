@@ -42,7 +42,7 @@ local subcommands = {
 vim.api.nvim_create_user_command("Annotate", function(cmd)
   local subcommand = subcommands[cmd.fargs[1]]
   if not subcommand then
-    return vim.notify(("Unknown subcommand: %s"):format(cmd.fargs[1]), vim.log.levels.ERROR, { title = "annotate" })
+    return vim.notify(("Unknown subcommand: %s"):format(cmd.fargs[1]), vim.log.levels.ERROR, { title = require("annotate.config").options.notify.title })
   end
 
   subcommand(cmd)

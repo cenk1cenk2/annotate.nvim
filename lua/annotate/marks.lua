@@ -22,6 +22,7 @@ function M.line_hl(t)
 end
 
 function M.highlights()
+  local blend = config.options.marks.blend
   local bg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg
 
   for _, t in ipairs(config.options.types) do
@@ -30,7 +31,7 @@ function M.highlights()
     if fg and bg then
       local blended = 0
       for _, base in ipairs({ 0x10000, 0x100, 1 }) do
-        blended = blended + math.floor(math.floor(fg / base) % 0x100 * 0.15 + math.floor(bg / base) % 0x100 * 0.85) * base
+        blended = blended + math.floor(math.floor(fg / base) % 0x100 * blend + math.floor(bg / base) % 0x100 * (1 - blend)) * base
       end
 
       vim.api.nvim_set_hl(0, M.line_hl(t), { bg = blended, default = true })
@@ -56,27 +57,30 @@ function M.render(bufnr)
     return
   end
 
+  local cfg = config.options.marks
   local count = vim.api.nvim_buf_line_count(bufnr)
 
   for _, annotation in ipairs(store.for_file(location.file, location.rev)) do
     local t = M.type(annotation)
-    local summary = vim.split(annotation.text, "\n", { plain = true })[1]
+    local virt_text = cfg.virtual_text and { { cfg.virtual_text_format(annotation, t), t.hl } } or nil
 
     if annotation.line == 0 then
       vim.api.nvim_buf_set_extmark(bufnr, M.ns, 0, 0, {
-        sign_text = t.icon,
-        sign_hl_group = t.hl,
-        virt_lines = { { { ("%s %s: %s"):format(t.icon, t.name, summary), t.hl } } },
-        virt_lines_above = true,
+        priority = cfg.priority,
+        sign_text = cfg.sign and t.icon or nil,
+        sign_hl_group = cfg.sign and t.hl or nil,
+        virt_lines = virt_text and { virt_text },
+        virt_lines_above = virt_text and true,
       })
     elseif (annotation.line_end or annotation.line) <= count then
       M.tracked[bufnr][annotation.id] = vim.api.nvim_buf_set_extmark(bufnr, M.ns, annotation.line - 1, 0, {
+        priority = cfg.priority,
         end_row = (annotation.line_end or annotation.line) - 1,
-        sign_text = t.icon,
-        sign_hl_group = t.hl,
-        line_hl_group = M.line_hl(t),
-        virt_text = { { ("%s %s: %s"):format(t.icon, t.name, summary), t.hl } },
-        virt_text_pos = "eol",
+        sign_text = cfg.sign and t.icon or nil,
+        sign_hl_group = cfg.sign and t.hl or nil,
+        line_hl_group = cfg.line_highlight and M.line_hl(t) or nil,
+        virt_text = virt_text,
+        virt_text_pos = virt_text and "eol",
       })
     end
   end

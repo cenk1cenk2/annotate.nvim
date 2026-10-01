@@ -11,7 +11,7 @@ local config = require("annotate.config")
 function M.fallback(opts, callback)
   if not M.warned then
     M.warned = true
-    vim.notify("snacks.nvim is not available, falling back to a single line input.", vim.log.levels.WARN, { title = "annotate" })
+    vim.notify("snacks.nvim is not available, falling back to a single line input.", vim.log.levels.WARN, { title = config.options.notify.title })
   end
 
   local t = config.type(opts.type) or config.options.types[1]
@@ -42,33 +42,35 @@ function M.open(opts, callback)
   index = index or 1
 
   local function title()
-    return (" %s %s "):format(types[index].icon, types[index].name)
+    return config.resolve(cfg.title, types[index], cfg.keys)
   end
 
   local result = {}
 
   snacks.win({
-    position = "float",
+    position = cfg.position,
     width = cfg.width,
     height = cfg.height,
     border = cfg.border,
     title = title(),
-    title_pos = "center",
-    footer = (" %s cycle  %s submit  %s cancel "):format(cfg.keys.cycle, cfg.keys.submit, cfg.keys.cancel),
-    footer_pos = "center",
+    title_pos = cfg.title_pos,
+    footer = config.resolve(cfg.footer, types[index], cfg.keys),
+    footer_pos = cfg.footer_pos,
     enter = true,
     text = opts.text,
-    bo = { filetype = "annotate", buftype = "nofile", bufhidden = "wipe" },
+    bo = { filetype = cfg.filetype, buftype = "nofile", bufhidden = "wipe" },
     wo = { wrap = true, linebreak = true },
     on_buf = function(self)
-      pcall(vim.treesitter.start, self.buf, "markdown")
+      if cfg.markdown then
+        pcall(vim.treesitter.start, self.buf, "markdown")
+      end
     end,
     keys = {
       [cfg.keys.cycle] = {
         cfg.keys.cycle,
         function(self)
           index = index % #types + 1
-          self:set_title(title(), "center")
+          self:set_title(title(), cfg.title_pos)
         end,
         mode = { "i", "n" },
         desc = "Cycle annotation type",

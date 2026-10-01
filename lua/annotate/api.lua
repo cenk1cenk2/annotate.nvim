@@ -10,7 +10,7 @@ local store = require("annotate.store")
 ---@param message string
 ---@param level? integer
 local function notify(message, level)
-  vim.notify(message, level or vim.log.levels.WARN, { title = "annotate" })
+  vim.notify(message, level or vim.log.levels.WARN, { title = config.options.notify.title })
 end
 
 ---@return string?
@@ -58,7 +58,7 @@ end
 ---@param location annotate.Location
 ---@param opts { type?: string }
 local function create(location, opts)
-  input.open({ type = opts.type or config.options.types[1].key }, function(type_key, text)
+  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key }, function(type_key, text)
     if not type_key then
       return
     end
@@ -121,6 +121,12 @@ function M.delete()
   local annotation = under_cursor()
   if not annotation then
     return
+  end
+
+  if not config.options.confirm_delete then
+    store.delete(annotation.id)
+
+    return marks.refresh()
   end
 
   vim.ui.select({ "Yes", "No" }, {
@@ -193,17 +199,18 @@ function M.pick()
     vim.api.nvim_win_set_cursor(0, { math.min(math.max(annotation.line, 1), vim.api.nvim_buf_line_count(0)), 0 })
   end
 
-  local ok, snacks = pcall(require, "snacks")
-  if not ok then
-    return vim.ui.select(annotations, { prompt = "Annotations", format_item = describe }, function(annotation)
+  local cfg = config.options.picker
+  local backend = cfg.backend or (pcall(require, "snacks") and "snacks" or "select")
+  if backend == "select" then
+    return vim.ui.select(annotations, { prompt = cfg.title, format_item = describe }, function(annotation)
       if annotation then
         open(annotation)
       end
     end)
   end
 
-  snacks.picker.pick({
-    title = "Annotations",
+  require("snacks").picker.pick({
+    title = cfg.title,
     items = vim.tbl_map(function(annotation)
       return {
         text = describe(annotation),
@@ -231,7 +238,7 @@ function M.quickfix()
   end
 
   vim.fn.setqflist({}, " ", {
-    title = "annotate",
+    title = config.options.quickfix.title,
     items = vim.tbl_map(function(annotation)
       local t = marks.type(annotation)
 
@@ -243,7 +250,10 @@ function M.quickfix()
       }
     end, store.all()),
   })
-  vim.cmd.copen()
+
+  if config.options.quickfix.open then
+    vim.cmd.copen()
+  end
 end
 
 --- Archives the annotations of the repository and clears the marks.

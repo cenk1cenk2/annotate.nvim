@@ -16,7 +16,7 @@ local git = require("annotate.git")
 
 ---@return string
 function M.dir()
-  return vim.fs.joinpath(vim.fn.stdpath("data"), "annotate")
+  return require("annotate.config").options.store.dir
 end
 
 ---@return string

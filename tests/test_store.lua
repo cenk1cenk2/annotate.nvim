@@ -1,15 +1,28 @@
 local H = dofile("tests/helpers.lua")
 local eq = MiniTest.expect.equality
 
+local config = require("annotate.config")
 local store = require("annotate.store")
 
 local T = MiniTest.new_set({
   hooks = {
     pre_case = function()
+      config.setup()
       H.repo()
     end,
   },
 })
+
+T["keeps the store under store.dir"] = function()
+  local dir = vim.fn.tempname()
+  config.setup({ store = { dir = dir } })
+
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "broken" })
+
+  eq(vim.startswith(store.path(), dir), true)
+  eq(vim.uv.fs_stat(store.path()) ~= nil, true)
+  eq(vim.startswith(store.archive_dir(), dir), true)
+end
 
 T["add persists and reloads"] = function()
   local added = store.add({ file = "a.lua", line = 3, type = "bug", text = "broken" })

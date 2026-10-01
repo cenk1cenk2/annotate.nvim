@@ -10,12 +10,6 @@ local store = require("annotate.store")
 ---@field types? string[] subset of type keys to export
 ---@field clear? boolean archive the store after exporting
 
----@param t annotate.Type
----@return string
-local function label(t)
-  return ("[%s]"):format(t.name:upper())
-end
-
 ---@param annotation annotate.Annotation
 ---@return string
 function M.location(annotation)
@@ -38,6 +32,11 @@ end
 function M.render(annotations, opts)
   opts = opts or {}
 
+  local cfg = config.options.export
+  if cfg.format then
+    return cfg.format(annotations, opts, config.options)
+  end
+
   local types = vim.deepcopy(config.options.types)
   local grouped = {}
   for _, annotation in ipairs(annotations) do
@@ -53,9 +52,9 @@ function M.render(annotations, opts)
     return grouped[t.key] ~= nil and (not opts.types or vim.list_contains(opts.types, t.key))
   end, types)
 
-  local lines = { opts.prompt or config.options.export.prompt, "", "## Description", "" }
+  local lines = { opts.prompt or cfg.prompt, "", ("## %s"):format(cfg.headings.description), "" }
   for _, t in ipairs(types) do
-    table.insert(lines, t.prompt ~= "" and ("- %s: %s"):format(label(t), t.prompt) or ("- %s"):format(label(t)))
+    table.insert(lines, t.prompt ~= "" and ("- %s: %s"):format(cfg.label(t), t.prompt) or ("- %s"):format(cfg.label(t)))
   end
 
   local compared = {}
@@ -71,15 +70,15 @@ function M.render(annotations, opts)
   end
 
   if #compared > 0 then
-    vim.list_extend(lines, { "", "## Compared", "" })
+    vim.list_extend(lines, { "", ("## %s"):format(cfg.headings.compared), "" })
     vim.list_extend(lines, compared)
   end
 
   for index, t in ipairs(types) do
     if index > 1 then
-      vim.list_extend(lines, { "", "---" })
+      vim.list_extend(lines, { "", cfg.separator })
     end
-    vim.list_extend(lines, { "", ("## %s"):format(label(t)), "" })
+    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(t)), "" })
 
     table.sort(grouped[t.key], function(a, b)
       if a.file ~= b.file then
@@ -115,7 +114,7 @@ function M.export(opts)
   end, store.all())
 
   if #annotations == 0 then
-    vim.notify("There are no annotations to export.", vim.log.levels.WARN, { title = "annotate" })
+    vim.notify("There are no annotations to export.", vim.log.levels.WARN, { title = config.options.notify.title })
 
     return nil
   end
@@ -132,7 +131,7 @@ function M.export(opts)
   else
     local path
     if to == "file" or to == "both" then
-      path = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate", ("%s-%s.md"):format(vim.fs.basename(git.root()), os.date("%Y%m%d-%H%M%S")))
+      path = vim.fs.joinpath(config.options.export.dir, config.resolve(config.options.export.filename, vim.fs.basename(git.root())))
       vim.fn.mkdir(vim.fs.dirname(path), "p")
       local file = assert(io.open(path, "w"))
       file:write(markdown)
@@ -148,7 +147,7 @@ function M.export(opts)
     vim.notify(
       path and ("Exported %d annotations to %s."):format(#annotations, path) or ("Copied %d annotations to the clipboard."):format(#annotations),
       vim.log.levels.INFO,
-      { title = "annotate" }
+      { title = config.options.notify.title }
     )
   end
 

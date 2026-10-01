@@ -12,25 +12,73 @@ local M = {}
 ---@field submit string
 ---@field cancel string
 
+---@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys): string
+
 ---@class annotate.InputConfig
 ---@field width number
 ---@field height number
 ---@field border string
+---@field position string
+---@field title annotate.InputFormat
+---@field title_pos string
+---@field footer annotate.InputFormat
+---@field footer_pos string
+---@field filetype string
+---@field markdown boolean
 ---@field keys annotate.InputKeys
 
+---@class annotate.StoreConfig
+---@field dir string
+
+---@class annotate.MarksConfig
+---@field sign boolean
+---@field line_highlight boolean
+---@field virtual_text boolean
+---@field virtual_text_format fun(annotation: annotate.Annotation, type: annotate.Type): string
+---@field blend number
+---@field priority integer
+
+---@class annotate.PickerConfig
+---@field backend? "snacks"|"select" nil picks snacks when available
+---@field title string
+
+---@class annotate.QuickfixConfig
+---@field title string
+---@field open boolean
+
+---@class annotate.NotifyConfig
+---@field title string
+
 ---@alias annotate.ExportTarget "file"|"clipboard"|"both"|fun(markdown: string, annotations: annotate.Annotation[])
+
+---@class annotate.ExportHeadings
+---@field description string
+---@field compared string
 
 ---@class annotate.ExportConfig
 ---@field to annotate.ExportTarget
 ---@field prompt string
 ---@field clipboard_message string
+---@field dir string
+---@field filename string|fun(repository: string): string
+---@field headings annotate.ExportHeadings
+---@field separator string
+---@field label fun(type: annotate.Type): string
+---@field format? fun(annotations: annotate.Annotation[], opts: annotate.ExportOptions, config: annotate.Config): string
 
 ---@class annotate.Config
 ---@field log_level? number
 ---@field types? annotate.Type[]
+---@field default_type? string
 ---@field sources? (string|annotate.Source)[]
 ---@field archive_days? number
+---@field confirm_delete? boolean
+---@field store? annotate.StoreConfig
+---@field marks? annotate.MarksConfig
 ---@field input? annotate.InputConfig
+---@field picker? annotate.PickerConfig
+---@field quickfix? annotate.QuickfixConfig
+---@field notify? annotate.NotifyConfig
 ---@field export? annotate.ExportConfig
 
 ---@type annotate.Config
@@ -80,22 +128,72 @@ local defaults = {
       prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
     },
   },
+  default_type = nil,
   sources = { "diffview", "repo" },
   archive_days = 30,
+  confirm_delete = true,
+  store = {
+    dir = vim.fs.joinpath(vim.fn.stdpath("data"), "annotate"),
+  },
+  marks = {
+    sign = true,
+    line_highlight = true,
+    virtual_text = true,
+    virtual_text_format = function(annotation, t)
+      return ("%s %s: %s"):format(t.icon, t.name, vim.split(annotation.text, "\n", { plain = true })[1])
+    end,
+    blend = 0.15,
+    priority = 4096,
+  },
   input = {
     width = 80,
     height = 10,
     border = "rounded",
+    position = "float",
+    title = function(t)
+      return (" %s %s "):format(t.icon, t.name)
+    end,
+    title_pos = "center",
+    footer = function(_, keys)
+      return (" %s cycle  %s submit  %s cancel "):format(keys.cycle, keys.submit, keys.cancel)
+    end,
+    footer_pos = "center",
+    filetype = "annotate",
+    markdown = true,
     keys = {
       cycle = "<C-n>",
       submit = "<C-s>",
       cancel = "q",
     },
   },
+  picker = {
+    backend = nil,
+    title = "Annotations",
+  },
+  quickfix = {
+    title = "annotate",
+    open = true,
+  },
+  notify = {
+    title = "annotate",
+  },
   export = {
     to = "both",
     prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what I expect for that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note, and do what the note's type asks. Questions are for us to settle together, so bring them back to me instead of deciding them yourself. When you finish, report back item by item: what you changed, where you applied a general or praise note, what you decided on each suggestion and why, and the questions still waiting on me.",
     clipboard_message = "Here are my review notes for this repository. Read the attached file and work through every item as it describes.",
+    dir = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate"),
+    filename = function(repository)
+      return ("%s-%s.md"):format(repository, os.date("%Y%m%d-%H%M%S"))
+    end,
+    headings = {
+      description = "Description",
+      compared = "Compared",
+    },
+    separator = "---",
+    label = function(t)
+      return ("[%s]"):format(t.name:upper())
+    end,
+    format = nil,
   },
 }
 
@@ -120,6 +218,18 @@ function M.type(key)
       return t, index
     end
   end
+end
+
+--- Resolves an option that is either the value itself or a function returning it.
+---@generic T
+---@param value T|fun(...): T
+---@return T
+function M.resolve(value, ...)
+  if type(value) == "function" then
+    return value(...)
+  end
+
+  return value
 end
 
 return M
