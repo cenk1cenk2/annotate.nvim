@@ -87,6 +87,7 @@ function M.open(opts, callback)
   end
 
   local cfg = config.options.input
+  local origin = vim.api.nvim_get_current_buf()
   local types = config.options.types
   local _, index = config.type(opts.type)
   index = index or 1
@@ -107,6 +108,8 @@ function M.open(opts, callback)
     bo = { filetype = cfg.filetype, buftype = "nofile", bufhidden = "wipe" },
     wo = { wrap = true, linebreak = true },
     on_buf = function(self)
+      vim.b[self.buf].annotate = true
+      vim.b[self.buf].annotate_origin = origin
       if cfg.markdown then
         pcall(vim.treesitter.start, self.buf, "markdown")
       end
@@ -143,6 +146,15 @@ function M.open(opts, callback)
         end,
         mode = { "i", "n" },
         desc = "Submit annotation",
+      },
+      [cfg.keys.close] = {
+        cfg.keys.close,
+        function(self)
+          vim.cmd.stopinsert()
+          self:close()
+        end,
+        mode = { "i", "n" },
+        desc = "Close annotation",
       },
       [cfg.keys.cancel] = {
         cfg.keys.cancel,

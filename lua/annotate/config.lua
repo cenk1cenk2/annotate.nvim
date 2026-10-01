@@ -12,6 +12,7 @@ local M = {}
 ---@field cycle_prev string
 ---@field submit string
 ---@field cancel string
+---@field close string
 
 ---@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys, types: annotate.Type[], index: integer): string
 
@@ -190,16 +191,17 @@ local defaults = {
     end,
     title_pos = "center",
     footer = function(_, keys)
-      return (" %s/%s cycle  %s submit  %s cancel "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.cancel)
+      return (" %s/%s cycle  %s submit  %s close "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.close)
     end,
     footer_pos = "center",
-    filetype = "annotate",
+    filetype = "markdown",
     markdown = true,
     keys = {
       cycle = "<C-n>",
       cycle_prev = "<C-p>",
       submit = "<C-s>",
       cancel = "q",
+      close = "<C-q>",
     },
   },
   show = {

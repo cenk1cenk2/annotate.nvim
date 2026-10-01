@@ -37,7 +37,7 @@ end
 T["footer names both cycle keys"] = function()
   local types = config.options.types
 
-  eq(config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1), " <C-p>/<C-n> cycle  <C-s> submit  q cancel ")
+  eq(config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1), " <C-p>/<C-n> cycle  <C-s> submit  <C-q> close ")
 end
 
 return T

@@ -235,8 +235,9 @@ require("annotate").setup({
       return (" %s/%s cycle  %s submit  %s cancel "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.cancel)
     end,
     footer_pos = "center",
-    -- filetype of the input buffer
-    filetype = "annotate",
+    -- filetype of the input buffer; markdown so markdown highlighting and plugins apply.
+    -- The buffer also carries `vim.b.annotate = true` and `vim.b.annotate_origin` (the annotated buffer)
+    filetype = "markdown",
     -- markdown treesitter highlighting in the input buffer
     markdown = true,
     keys = {
@@ -244,6 +245,7 @@ require("annotate").setup({
       cycle_prev = "<C-p>",
       submit = "<C-s>",
       cancel = "q",
+      close = "<C-q>",
     },
   },
   show = {
