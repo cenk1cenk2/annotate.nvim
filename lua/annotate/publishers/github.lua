@@ -57,17 +57,6 @@ local function pulls(target, path)
   return ("repos/%s/pulls/%d%s"):format(target.remote.path, target.id, path or "")
 end
 
----@param ... string?
----@return string
-local function join(...)
-  return table.concat(
-    vim.tbl_filter(function(part)
-      return part ~= ""
-    end, { ... }),
-    "\n\n"
-  )
-end
-
 function M.resolve(remote)
   local publishers = require("annotate.publishers")
 
@@ -162,38 +151,19 @@ function M.route(item)
     return "file", (item.annotation.line == 0 and not item.annotation.rev) and item.body or publishers.located(item)
   end
 
-  return "body", item.kind == "repository" and item.body or publishers.located(item)
+  return "conversation", item.kind == "repository" and item.body or publishers.located(item)
 end
 
+--- Adds review threads to the pending review, creating it first; conversation comments can not be drafts, so they are only queued for the submit.
 function M.post(target, items, record)
   local publishers = require("annotate.publishers")
 
-  if #items == 0 then
-    return
-  end
-
-  local bodies = vim.tbl_filter(function(item)
-    return item.destination == "body"
-  end, items)
-  local body = table.concat(
-    vim.tbl_map(function(item)
-      return item.body
-    end, bodies),
-    "\n\n"
-  )
-
-  if not target.review then
-    target.review = M.api(target.remote, pulls(target, "/reviews"), { method = "POST", body = { commit_id = target.head, body = body ~= "" and body or nil } })
-  elseif body ~= "" then
-    target.review = M.api(target.remote, pulls(target, ("/reviews/%d"):format(target.review.id)), { method = "PUT", body = { body = join(target.review.body or "", body) } })
-  end
-
-  for _, item in ipairs(bodies) do
-    record(item, { id = target.review.id, review_id = target.review.id, review_node_id = target.review.node_id, comment_url = target.review.html_url })
-  end
-
   for _, item in ipairs(items) do
-    if item.destination ~= "body" then
+    if item.destination == "conversation" then
+      record(item, { state = "queued" })
+    else
+      target.review = target.review or M.api(target.remote, pulls(target, "/reviews"), { method = "POST", body = { commit_id = target.head } })
+
       local side = item.side == "old" and "LEFT" or "RIGHT"
       local variables = { review = target.review.node_id, path = item.path, body = item.body }
       if item.destination == "file" then
@@ -227,65 +197,47 @@ function M.post(target, items, record)
   end
 end
 
+--- Posts a queued note as a conversation comment of the pull request.
+function M.deliver(target, entry)
+  local comment = M.api(target.remote, ("repos/%s/issues/%d/comments"):format(target.remote.path, target.id), { method = "POST", body = { body = entry.body } })
+
+  return { id = comment.id, issue_comment_id = comment.id, issue_comment_node_id = comment.node_id, comment_url = comment.html_url }
+end
+
 function M.update(target, item, entry)
   local publishers = require("annotate.publishers")
 
-  local function fail(endpoint, err)
+  if entry.state == "queued" then
+    return {}
+  end
+
+  local endpoint
+  if entry.issue_comment_id then
+    endpoint = ("repos/%s/issues/comments/%d"):format(target.remote.path, entry.issue_comment_id)
+  elseif entry.comment_id then
+    endpoint = ("repos/%s/pulls/comments/%d"):format(target.remote.path, entry.comment_id)
+  else
+    return nil
+  end
+
+  local comment, err = M.api(target.remote, endpoint, { method = "PATCH", body = { body = item.body }, attempt = true })
+  if err then
     if publishers.missing(err) then
       return nil
     end
     error(("gh api %s failed: %s"):format(endpoint, err), 0)
   end
 
-  if entry.comment_id then
-    local endpoint = ("repos/%s/pulls/comments/%d"):format(target.remote.path, entry.comment_id)
-    local comment, err = M.api(target.remote, endpoint, { method = "PATCH", body = { body = item.body }, attempt = true })
-    if err then
-      return fail(endpoint, err)
-    end
-
-    return { comment_url = comment.html_url }
-  end
-
-  local endpoint = pulls(target, ("/reviews/%d"):format(entry.review_id or entry.id))
-  local review = target.review and target.review.id == (entry.review_id or entry.id) and target.review
-  if not review then
-    local err
-    review, err = M.api(target.remote, endpoint, { attempt = true })
-    if err then
-      return fail(endpoint, err)
-    end
-  end
-
-  local first, last = (review.body or ""):find(entry.body or "", 1, true)
-  if not (entry.body and first) then
-    return nil
-  end
-
-  local updated, err = M.api(target.remote, endpoint, {
-    method = "PUT",
-    body = { body = review.body:sub(1, first - 1) .. item.body .. review.body:sub(last + 1) },
-    attempt = true,
-  })
-  if err then
-    return fail(endpoint, err)
-  end
-  if target.review and target.review.id == updated.id then
-    target.review = updated
-  end
-
-  return {}
+  return { comment_url = comment.html_url }
 end
 
+--- Submits the pending review with the verdict and the note as its body; a plain comment without a note and nothing pending needs no review.
 function M.submit(target, verdict, note)
   local event = verdict:upper()
 
   if target.review then
-    M.api(target.remote, pulls(target, ("/reviews/%d/events"):format(target.review.id)), {
-      method = "POST",
-      body = { event = event, body = join(note or "", target.review.body or "") },
-    })
-  else
+    M.api(target.remote, pulls(target, ("/reviews/%d/events"):format(target.review.id)), { method = "POST", body = { event = event, body = note } })
+  elseif event ~= "COMMENT" or note then
     M.api(target.remote, pulls(target, "/reviews"), { method = "POST", body = { commit_id = target.head, event = event, body = note } })
   end
 end

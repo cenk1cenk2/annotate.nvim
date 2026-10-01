@@ -143,6 +143,23 @@ local function github()
       comment.body = body.body
 
       return { id = comment.id, html_url = "https://github.com/c/" .. comment.id }
+    elseif endpoint == ("repos/owner/repo/issues/%d/comments"):format(forge.number) then
+      forge.next = forge.next + 1
+      local comment = { id = forge.next, node_id = "IC" .. forge.next, body = body.body, html_url = "https://github.com/i/" .. forge.next }
+      forge.conversation = forge.conversation or {}
+      table.insert(forge.conversation, comment)
+
+      return comment
+    elseif endpoint:match("^repos/owner/repo/issues/comments/%d+$") then
+      local comment = vim.iter(forge.conversation or {}):find(function(c)
+        return c.id == tonumber(endpoint:match("(%d+)$"))
+      end)
+      if not comment then
+        return nil, "gh: Not Found (HTTP 404)"
+      end
+      comment.body = body.body
+
+      return comment
     elseif endpoint:match("/events$") then
       forge.submitted = body
     elseif endpoint == "graphql" then
@@ -380,8 +397,8 @@ T["routes and bodies per platform"] = function()
     { "inline", "broken" },
     { "file", "`a.lua:10`\n\nbroken" },
     { "file", "broken" },
-    { "body", "`b.lua:1`\n\nbroken" },
-    { "body", "broken" },
+    { "conversation", "`b.lua:1`\n\nbroken" },
+    { "conversation", "broken" },
   })
 end
 
@@ -477,15 +494,30 @@ T["the legend labels the bodies and lists the external prompts of the used types
   eq(messages[#messages], "Every annotation is already posted to !5 Add the thing, 3 notes skipped.")
 end
 
-T["external.legend turns the legend on and GitHub puts it in the review body"] = function()
+T["external.legend turns the legend on and GitHub queues it as its own conversation comment"] = function()
   remote("git@github.com:owner/repo.git")
-  stub(github())
+  local forge = github()
+  stub(forge)
   config.setup({ external = { summary = false, legend = true, legend_prompt = "KINDS" } })
   add({ line = 0, text = "overall" })
 
   publishers.publish()
 
-  eq(requests("POST", "/reviews$")[1].body.body, "KINDS\n\n- **[BUG]**: " .. config.type("bug").external.prompt .. "\n\n**[BUG]**\n\noverall")
+  eq(#requests("POST", "/comments$"), 0)
+  store.load(true)
+  eq(store.legend.posted[1].state, "queued")
+
+  publishers.publish({ publish = true, verdict = "comment", note = "" })
+
+  eq(
+    vim.tbl_map(function(comment)
+      return comment.body
+    end, forge.conversation),
+    { "KINDS\n\n- **[BUG]**: " .. config.type("bug").external.prompt, "**[BUG]**\n\noverall" }
+  )
+  eq(#requests("POST", "/reviews$"), 0)
+  store.load(true)
+  eq({ store.legend.posted[1].state, store.legend.posted[1].issue_comment_id }, { "published", 201 })
 end
 
 T["the summary shows the legend and its text"] = function()
@@ -575,29 +607,33 @@ T["a changed published note is updated, and posted again when it was deleted"] =
   eq({ #posted, posted[1].state, posted[1].body }, { 1, "draft", "edited again" })
 end
 
-T["GitHub records the forge ids and updates changed comments and review body parts"] = function()
+T["GitHub records the forge ids and updates changed review and conversation comments"] = function()
   remote("git@github.com:owner/repo.git")
-  stub(github())
+  local forge = github()
+  stub(forge)
   local inline = add({ file = "a.lua", line = 2 })
   local overall = add({ line = 0, text = "overall" })
   add({ line = 0, type = "question", text = "kept" })
 
-  publishers.publish()
+  publishers.publish({ publish = true, verdict = "comment", note = "" })
   store.load(true)
   local entry = store.get(inline.id).posted[1]
   eq(
     { entry.id, entry.comment_id, entry.comment_node_id, entry.thread_node_id, entry.review_id, entry.review_node_id, entry.pr_node_id },
     { 202, 202, "C202", "T202", 201, "R201", "PR_7" }
   )
-  eq({ store.get(overall.id).posted[1].review_id, store.get(overall.id).posted[1].body }, { 201, "overall" })
+  entry = store.get(overall.id).posted[1]
+  eq({ entry.state, entry.issue_comment_id, entry.issue_comment_node_id, entry.comment_url }, { "published", 203, "IC203", "https://github.com/i/203" })
 
   store.update(inline.id, { text = "fixed wording" })
   store.update(overall.id, { text = "overall, revised" })
   publishers.publish()
 
   eq(requests("PATCH", "pulls/comments/202$")[1].body, { body = "fixed wording" })
-  eq(requests("PUT", "/reviews/201$")[1].body, { body = "overall, revised\n\nkept" })
+  eq(requests("PATCH", "issues/comments/203$")[1].body, { body = "overall, revised" })
+  eq(forge.conversation[1].body, "overall, revised")
   eq(#requests("GET", "^graphql$"), 1)
+  eq(#requests("POST", "/comments$"), 2)
 end
 
 T["refuses when HEAD is not the head of the merge request"] = function()
@@ -909,13 +945,48 @@ T["GitHub staging creates a pending review with threads and no event"] = functio
 
   local reviews = requests("POST", "/reviews$")
   eq(#reviews, 1)
-  eq(reviews[1].body, { commit_id = HEAD, body = "overall" })
+  eq(reviews[1].body, { commit_id = HEAD })
+  eq(#requests("POST", "/comments$"), 0)
   local threads = requests("GET", "^graphql$")
   eq(threads[1].body.variables, { review = "R201", path = "a.lua", body = "broken", line = 3, side = "RIGHT", startLine = 2, startSide = "RIGHT" })
   eq(threads[2].body.variables, { review = "R201", path = "a.lua", body = "broken", subjectType = "FILE" })
   eq(#requests("POST", "/events$"), 0)
   store.load(true)
   eq({ store.get(inline.id).posted[1].id, store.get(inline.id).posted[1].comment_url }, { 202, "https://github.com/c/202" })
+  local queued = vim.iter(store.all()):find(function(annotation)
+    return annotation.text == "overall"
+  end)
+  eq(queued.posted[1].state, "queued")
+end
+
+T["queued notes show in the summary and are posted one by one on submit"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  stub(forge)
+  config.setup({ external = { summary = true } })
+  add({ line = 0, text = "first" })
+  add({ file = "b.lua", line = 1, text = "second" })
+  local prompts = {}
+  answer({ "Proceed" }, prompts)
+
+  publishers.publish()
+
+  eq(prompts[1]:find("- Destination: conversation comment\n- Status: new, queued, posted on submit", 1, true) ~= nil, true)
+  eq(prompts[1]:find("- Destination: conversation comment (outside the diff)", 1, true) ~= nil, true)
+  eq(#requests("POST", "/reviews$"), 0)
+
+  publishers.publish({ publish = true, verdict = "comment", note = "", force = true })
+
+  eq(
+    vim.tbl_map(function(comment)
+      return comment.body
+    end, forge.conversation),
+    { "first", "`b.lua:1`\n\nsecond" }
+  )
+
+  publishers.publish({ publish = true, verdict = "comment", note = "", force = true })
+
+  eq(#forge.conversation, 2)
 end
 
 T["GitHub submit finalizes the pending review with the verdict and note"] = function()

@@ -594,11 +594,13 @@ A note is inside the diff when every line of it falls into one hunk of the file'
 | Note | GitLab | GitHub |
 | --- | --- | --- |
 | Lines inside the diff | Draft note positioned on the lines (`new_line` or `old_line`, plus `line_range` with GitLab line codes for a range) | Review comment on the lines (`line`, `start_line`, `side` `RIGHT` or `LEFT`) |
-| Lines outside the diff | General draft note, prefixed with `` `path:line` `` | File comment, prefixed with `` `path:line` ``, or the review body when the file is not in the diff |
-| Whole file | General draft note naming the file | File comment, or the review body when the file is not in the diff |
-| Repository | General draft note | Review body |
+| Lines outside the diff | General draft note, prefixed with `` `path:line` `` | File comment, prefixed with `` `path:line` ``, or a conversation comment when the file is not in the diff |
+| Whole file | General draft note naming the file | File comment, or a conversation comment when the file is not in the diff |
+| Repository | General draft note | Conversation comment |
 
-Each comment is the note's markdown as it is, without its type, since reviewers on the forge do not know what the types mean. With `external.legend = true`, or `publish({ legend = true })` for one call, each comment starts with `**[<TYPE>]**` and a blank line, and a legend is posted once per merge or pull request: `external.legend_prompt` followed by every type in use with its `external.prompt`. GitLab receives it as a general note, GitHub in the review body; it is recorded in the store like a note, so it is not posted twice. `external.body` changes the comment.
+Every note is its own comment, nothing is merged together. GitHub conversation comments (`POST /repos/{owner}/{repo}/issues/{number}/comments`) can not be drafts, so staging only queues them in the store, shown as `queued, posted on submit` in the summary, and the submit posts them one by one after the review. The review body only carries the review note of the submit.
+
+Each comment is the note's markdown as it is, without its type, since reviewers on the forge do not know what the types mean. With `external.legend = true`, or `publish({ legend = true })` for one call, each comment starts with `**[<TYPE>]**` and a blank line, and a legend is posted once per merge or pull request: `external.legend_prompt` followed by every type in use with its `external.prompt`. It is its own note: a general draft note on GitLab, a queued conversation comment on GitHub; it is recorded in the store like a note, so it is not posted twice. `external.body` changes the comment.
 
 A note of a `prefill = "selection"` type, like `rewrite`, positioned on the new side of the diff turns its first fenced block into the forge's suggestion, which the author applies with one click: ` ```suggestion ` spanning the annotated lines on GitHub, ` ```suggestion:-0+N ` from the first annotated line on GitLab. Text around the block stays as it is. Suggestions only work in the diff, so a rewrite outside it keeps its plain block and the summary counts it.
 
@@ -615,12 +617,12 @@ Before anything is posted, a float shows the plan in the shape of the export: th
 
 ### Duplicates and Updates
 
-Every posted note records where it went under `posted`: platform, project, merge or pull request, branches, title, URLs, whether it is still a draft, the body that was sent with its SHA-1, and every id the forge returned for it. On GitLab that is the draft note id, then the note and discussion ids once published, along with the merge request's global id, iid and project id. On GitHub it is the review id and node id, the comment id and node id, the thread node id and the pull request node id.
+Every posted note records where it went under `posted`: platform, project, merge or pull request, branches, title, URLs, whether it is a draft, queued or published, the body that was sent with its SHA-1, and every id the forge returned for it. On GitLab that is the draft note id, then the note and discussion ids once published, along with the merge request's global id, iid and project id. On GitHub it is the review id and node id, the comment id and node id, the thread node id, the conversation comment id and node id, and the pull request node id.
 
 Publishing to the same merge or pull request again compares each note with what was sent:
 
 - An unchanged note is skipped.
-- A changed note is updated in place: `PUT .../draft_notes/:id` or `PUT .../notes/:id` on GitLab, `PATCH .../pulls/comments/:id` for a comment or `PUT .../reviews/:id` for its part of the review body on GitHub. The summary marks it `update` with the first changed line.
+- A changed note is updated in place: `PUT .../draft_notes/:id` or `PUT .../notes/:id` on GitLab, `PATCH .../pulls/comments/:id` for a review comment or `PATCH .../issues/comments/:id` for a conversation comment on GitHub, while a queued note only changes in the store. The summary marks it `update` with the first changed line.
 - A note whose draft or comment was deleted on the forge is posted again.
 
 A submit marks the staged drafts as published without posting them again. A note can still go to another merge or pull request. `show()` lists where a note was posted, the picker marks it.

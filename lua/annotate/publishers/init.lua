@@ -50,7 +50,7 @@
 ---@field line_end? integer last line on `side`
 ---@field new_line? integer new side line of `line`
 ---@field old_line? integer old side line of `line`
----@field destination? "inline"|"suggestion"|"file"|"general"|"body" set by the publisher's `route` along with the final `body`
+---@field destination? "inline"|"suggestion"|"file"|"general"|"conversation" set by the publisher's `route` along with the final `body`
 
 ---@class annotate.Posted
 ---@field platform string
@@ -64,7 +64,7 @@
 ---@field url string of the merge or pull request
 ---@field comment_url? string
 ---@field id integer|string draft note, review comment, or review id
----@field state "draft"|"published"
+---@field state "draft"|"queued"|"published" queued notes are only recorded and posted on submit
 ---@field at integer
 ---@field hash string SHA-1 of the posted body
 ---@field body string the posted body
@@ -89,7 +89,8 @@
 ---@field post fun(target: annotate.Target, items: annotate.PublishItem[], record: fun(item: annotate.PublishItem, ids: annotate.PostedIds)) stages the items as drafts
 ---@field update fun(target: annotate.Target, item: annotate.PublishItem, entry: annotate.Posted): annotate.PostedIds? changes the posted body in place, nil when it no longer exists on the forge
 ---@field target string what a review target is called, like `Merge request`
----@field route fun(item: annotate.PublishItem): "inline"|"suggestion"|"file"|"general"|"body", string where the item goes on the platform and the body sent there
+---@field route fun(item: annotate.PublishItem): "inline"|"suggestion"|"file"|"general"|"conversation", string where the item goes on the platform and the body sent there
+---@field deliver? fun(target: annotate.Target, entry: annotate.Posted): annotate.PostedIds posts a queued note on submit
 ---@field submit fun(target: annotate.Target, verdict: string, note?: string): table<string, annotate.PostedIds>? publishes every draft with the verdict, returning what the drafts became by draft id
 
 ---@class annotate.PublishOptions
@@ -593,7 +594,7 @@ local function destination(item)
     return "suggestion"
   end
 
-  local label = ({ file = "file comment", general = "general comment", body = "review body" })[item.destination] or item.destination
+  local label = ({ file = "file comment", general = "general comment", conversation = "conversation comment" })[item.destination] or item.destination
 
   return item.fallback and ("%s (outside the diff)"):format(label) or label
 end
@@ -615,7 +616,8 @@ function M.summary(publisher, target, items, skipped, submit, legend, verdicts)
   for _, item in ipairs(items) do
     rows[item.annotation] = {
       "- Destination: " .. destination(item),
-      item.update and ("- Status: update, %s on %s, %s"):format(item.update.state, target.reference, M.change(item.update.body, item.body)) or "- Status: new",
+      item.update and ("- Status: update, %s on %s, %s"):format(item.update.state, target.reference, M.change(item.update.body, item.body))
+        or (item.destination == "conversation" and not submit and "- Status: new, queued, posted on submit" or "- Status: new"),
       "",
       item.body,
     }
@@ -938,7 +940,7 @@ function M.publish(opts)
       record(
         item.annotation,
         vim.list_extend(vim.deepcopy(item.annotation.posted or {}), {
-          vim.tbl_extend("force", target.ids or {}, ids, {
+          vim.tbl_extend("force", { state = "draft" }, target.ids or {}, {
             platform = publisher.name,
             remote_url = remote.url,
             project = remote.path,
@@ -948,11 +950,10 @@ function M.publish(opts)
             title = target.title,
             reference = target.reference,
             url = target.url,
-            state = "draft",
             hash = M.sha1(item.body),
             body = item.body,
             at = os.time(),
-          }),
+          }, ids),
         })
       )
     end)
@@ -966,6 +967,12 @@ function M.publish(opts)
           for key, value in pairs(published[tostring(entry.id)] or {}) do
             entry[key] = entry[key] or value
           end
+        elseif entry and entry.state == "queued" then
+          entry = vim.tbl_extend("force", entry, publisher.deliver(target, entry), { state = "published", at = os.time() })
+          local entries = vim.deepcopy(annotation.posted)
+          local _, index = M.posted(annotation, publisher.name, target)
+          entries[index] = entry
+          record(annotation.id and annotation or vim.tbl_extend("force", annotation, { id = M.LEGEND }), entries)
         end
       end
       store.save()
