@@ -61,7 +61,7 @@ T["starts the input on the first type"] = function()
 
   api.add()
 
-  eq(opened.type, "general")
+  eq(opened.type, "issue")
 end
 
 T["starts the input on default_type"] = function()
@@ -226,14 +226,14 @@ end
 T["type action cycles to the next type and wraps around"] = function()
   require("annotate").setup()
   local bug = store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
-  local context = store.add({ file = "a.lua", line = 2, type = "context", text = "two" })
-  local p = picker({ bug, context })
+  local praise = store.add({ file = "a.lua", line = 2, type = "praise", text = "two" })
+  local p = picker({ bug, praise })
 
   api.actions.type.action(p)
 
   store.load(true)
-  eq(store.get(bug.id).type, "question")
-  eq(store.get(context.id).type, "general")
+  eq(store.get(bug.id).type, "context")
+  eq(store.get(praise.id).type, "issue")
   eq(p.refreshed, 1)
 end
 

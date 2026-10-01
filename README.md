@@ -130,18 +130,18 @@ require("annotate").setup({
   -- ordered: the first entry is the default type, the order drives cycling in the input and the section order of the export
   types = {
     {
+      key = "issue",
+      name = "Issue",
+      icon = "",
+      hl = "Special",
+      prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+    },
+    {
       key = "general",
       name = "General",
       icon = "",
       hl = "DiagnosticInfo",
       prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
-    },
-    {
-      key = "praise",
-      name = "Praise",
-      icon = "",
-      hl = "DiagnosticOk",
-      prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
     },
     {
       key = "suggestion",
@@ -151,13 +151,6 @@ require("annotate").setup({
       prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
     },
     {
-      key = "bug",
-      name = "Bug",
-      icon = "",
-      hl = "DiagnosticError",
-      prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
-    },
-    {
       key = "question",
       name = "Question",
       icon = "",
@@ -165,11 +158,25 @@ require("annotate").setup({
       prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
     },
     {
+      key = "bug",
+      name = "Bug",
+      icon = "",
+      hl = "DiagnosticError",
+      prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+    },
+    {
       key = "context",
       name = "Context",
       icon = "",
       hl = "Comment",
       prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+    },
+    {
+      key = "praise",
+      name = "Praise",
+      icon = "",
+      hl = "DiagnosticOk",
+      prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
     },
   },
   -- key of the type a new note starts on, nil for the first entry of types
@@ -262,7 +269,7 @@ require("annotate").setup({
   export = {
     -- "file" | "clipboard" | "both" | fun(markdown, annotations)
     to = "both",
-    prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what I expect for that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note, and do what the note's type asks. Questions are for us to settle together, so bring them back to me instead of deciding them yourself. When you finish, report back item by item: what you changed, where you applied a general or praise note, what you decided on each suggestion and why, and the questions still waiting on me.",
+    prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what I expect for that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note, and do what the note's type asks. Questions are for us to settle together, so bring them back to me instead of deciding them yourself. When you finish, report back item by item: what you changed, where you applied an issue, general or praise note, what you decided on each suggestion and why, and the questions still waiting on me.",
     clipboard_message = "Here are my review notes for this repository. Read the attached file and work through every item as it describes.",
     -- directory exported files are written to
     dir = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate"),

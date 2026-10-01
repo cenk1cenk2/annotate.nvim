@@ -100,9 +100,9 @@ T["uses the configured headings, separator and label"] = function()
   })
 
   eq(markdown:find("## Description", 1, true), nil)
-  eq(markdown:find("## Legend\n\n- praise: ", 1, true) ~= nil, true)
+  eq(markdown:find("## Legend\n\n- bug: ", 1, true) ~= nil, true)
   eq(markdown:find("## Diff\n\n- `HEAD` .. `LOCAL`", 1, true) ~= nil, true)
-  eq(markdown:find("## praise\n\n- `a.lua:2` - nice\n\n***\n\n## bug\n", 1, true) ~= nil, true)
+  eq(markdown:find("## bug\n\n- `a.lua:1` - broken\n\n***\n\n## praise\n", 1, true) ~= nil, true)
   eq(markdown:find("---", 1, true), nil)
 end
 
