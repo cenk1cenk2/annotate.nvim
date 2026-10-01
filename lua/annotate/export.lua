@@ -1,0 +1,197 @@
+local M = {}
+
+local config = require("annotate.config")
+local git = require("annotate.git")
+local store = require("annotate.store")
+
+---@class annotate.ExportOptions
+---@field to? annotate.ExportTarget
+---@field prompt? string
+---@field types? string[] subset of type keys to export
+---@field clear? boolean archive the store after exporting
+
+---@param t annotate.Type
+---@return string
+local function label(t)
+  return ("[%s]"):format(t.name:upper())
+end
+
+---@param annotation annotate.Annotation
+---@return string
+function M.location(annotation)
+  local lines = ""
+  if annotation.line > 0 then
+    lines = annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end) or tostring(annotation.line)
+  end
+
+  if annotation.rev then
+    return lines == "" and ("%s @ %s"):format(annotation.file, annotation.rev) or ("%s:~%s @ %s"):format(annotation.file, lines, annotation.rev)
+  end
+
+  return lines == "" and annotation.file or ("%s:%s"):format(annotation.file, lines)
+end
+
+--- Renders annotations into the markdown document handed to an agent.
+---@param annotations annotate.Annotation[]
+---@param opts? annotate.ExportOptions
+---@return string
+function M.render(annotations, opts)
+  opts = opts or {}
+
+  local types = vim.deepcopy(config.options.types)
+  local grouped = {}
+  for _, annotation in ipairs(annotations) do
+    if not config.type(annotation.type) and not grouped[annotation.type] then
+      table.insert(types, { key = annotation.type, name = annotation.type, prompt = "" })
+    end
+
+    grouped[annotation.type] = grouped[annotation.type] or {}
+    table.insert(grouped[annotation.type], annotation)
+  end
+
+  types = vim.tbl_filter(function(t)
+    return grouped[t.key] ~= nil and (not opts.types or vim.list_contains(opts.types, t.key))
+  end, types)
+
+  local lines = { opts.prompt or config.options.export.prompt, "", "## Description", "" }
+  for _, t in ipairs(types) do
+    table.insert(lines, t.prompt ~= "" and ("- %s: %s"):format(label(t), t.prompt) or ("- %s"):format(label(t)))
+  end
+
+  local compared = {}
+  for _, t in ipairs(types) do
+    for _, annotation in ipairs(grouped[t.key]) do
+      if annotation.context then
+        local pair = ("- `%s` .. `%s`"):format(annotation.context.left, annotation.context.right)
+        if not vim.list_contains(compared, pair) then
+          table.insert(compared, pair)
+        end
+      end
+    end
+  end
+
+  if #compared > 0 then
+    vim.list_extend(lines, { "", "## Compared", "" })
+    vim.list_extend(lines, compared)
+  end
+
+  for index, t in ipairs(types) do
+    if index > 1 then
+      vim.list_extend(lines, { "", "---" })
+    end
+    vim.list_extend(lines, { "", ("## %s"):format(label(t)), "" })
+
+    table.sort(grouped[t.key], function(a, b)
+      if a.file ~= b.file then
+        return a.file < b.file
+      end
+      if a.line ~= b.line then
+        return a.line < b.line
+      end
+
+      return a.created_at < b.created_at
+    end)
+
+    for _, annotation in ipairs(grouped[t.key]) do
+      local text = vim.split(annotation.text, "\n", { plain = true })
+      table.insert(lines, ("- `%s` - %s"):format(M.location(annotation), text[1]))
+      for i = 2, #text do
+        table.insert(lines, text[i] == "" and "" or "  " .. text[i])
+      end
+    end
+  end
+
+  return table.concat(lines, "\n") .. "\n"
+end
+
+--- Exports the annotations of the current repository and delivers the markdown.
+---@param opts? annotate.ExportOptions
+---@return string? markdown, nil when there was nothing to export
+function M.export(opts)
+  opts = opts or {}
+
+  local annotations = vim.tbl_filter(function(annotation)
+    return not opts.types or vim.list_contains(opts.types, annotation.type)
+  end, store.all())
+
+  if #annotations == 0 then
+    vim.notify("There are no annotations to export.", vim.log.levels.WARN, { title = "annotate" })
+
+    return nil
+  end
+
+  local to = opts.to or config.options.export.to
+  if type(to) ~= "function" and not vim.list_contains({ "file", "clipboard", "both" }, to) then
+    error(("annotate: unknown export target: %s"):format(to))
+  end
+
+  local markdown = M.render(annotations, opts)
+
+  if type(to) == "function" then
+    to(markdown, annotations)
+  else
+    local path
+    if to == "file" or to == "both" then
+      path = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate", ("%s-%s.md"):format(vim.fs.basename(git.root()), os.date("%Y%m%d-%H%M%S")))
+      vim.fn.mkdir(vim.fs.dirname(path), "p")
+      local file = assert(io.open(path, "w"))
+      file:write(markdown)
+      file:close()
+    end
+
+    if to == "clipboard" or to == "both" then
+      local message = path and ("%s\n\n@%s"):format(config.options.export.clipboard_message, path) or markdown
+      vim.fn.setreg("+", message)
+      vim.fn.setreg("*", message)
+    end
+
+    vim.notify(
+      path and ("Exported %d annotations to %s."):format(#annotations, path) or ("Copied %d annotations to the clipboard."):format(#annotations),
+      vim.log.levels.INFO,
+      { title = "annotate" }
+    )
+  end
+
+  if opts.clear then
+    store.archive()
+    require("annotate.marks").clear()
+  end
+
+  return markdown
+end
+
+--- Shows the export markdown without delivering it.
+---@param opts? annotate.ExportOptions
+function M.preview(opts)
+  local markdown = M.render(store.all(), opts)
+  local lines = vim.split(markdown, "\n", { plain = true })
+
+  local ok, snacks = pcall(require, "snacks")
+  if not ok then
+    vim.cmd.new()
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    vim.bo.buftype = "nofile"
+    vim.bo.bufhidden = "wipe"
+    vim.bo.modifiable = false
+    vim.bo.filetype = "markdown"
+
+    return
+  end
+
+  snacks.win({
+    position = "float",
+    width = 0.8,
+    height = 0.8,
+    border = config.options.input.border,
+    title = " annotate ",
+    title_pos = "center",
+    enter = true,
+    text = lines,
+    ft = "markdown",
+    bo = { modifiable = false },
+    wo = { wrap = true, linebreak = true },
+    keys = { q = "close" },
+  })
+end
+
+return M

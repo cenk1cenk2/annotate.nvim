@@ -1,0 +1,43 @@
+---
+# https://taskfile.dev
+
+version: "3"
+
+vars: {}
+
+env: {}
+
+tasks:
+  format:
+    desc: Format the repository.
+    cmds:
+      - stylua --config-path .stylua.toml . -v
+    sources:
+      - "lua/**/*.lua"
+
+  lint:
+    desc: Lint the repository.
+    cmds:
+      - stylua --config-path .stylua.toml --check .
+      - selene .
+    sources:
+      - "lua/**/*.lua"
+
+  deps:
+    desc: Clone the test dependencies.
+    cmds:
+      - git clone --depth 1 https://github.com/nvim-mini/mini.test deps/mini.test
+    status:
+      - test -d deps/mini.test
+
+  test:
+    desc: Run the test suite.
+    deps:
+      - deps
+    env:
+      XDG_DATA_HOME: "{{.ROOT_DIR}}/.tests/data"
+      XDG_STATE_HOME: "{{.ROOT_DIR}}/.tests/state"
+      XDG_CACHE_HOME: "{{.ROOT_DIR}}/.tests/cache"
+      XDG_CONFIG_HOME: "{{.ROOT_DIR}}/.tests/config"
+    cmds:
+      - nvim --headless --noplugin -u tests/minimal_init.lua -c "lua MiniTest.run()"
