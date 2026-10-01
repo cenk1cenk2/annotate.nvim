@@ -277,6 +277,20 @@ function M.delete(opts)
   end)
 end
 
+--- Where the annotation was posted as a markdown list followed by a blank line, empty when it never was.
+---@param annotation annotate.Annotation
+---@return string[]
+local function posted(annotation)
+  local lines = vim.tbl_map(function(entry)
+    return ("- %s"):format(require("annotate.publishers").describe(entry))
+  end, annotation.posted or {})
+  if #lines > 0 then
+    table.insert(lines, "")
+  end
+
+  return lines
+end
+
 --- Shows the annotations on the cursor line in a float, focusing the float when it is already open.
 function M.show()
   local cfg = config.options.show
@@ -300,6 +314,7 @@ function M.show()
       vim.list_extend(lines, { "", "---", "" })
     end
     vim.list_extend(lines, { ("## %s %s"):format(t.icon, t.name), "", ("`%s`"):format(require("annotate.export").location(annotation)), "" })
+    vim.list_extend(lines, posted(annotation))
     if t.prompt ~= "" then
       vim.list_extend(lines, { ("_%s_"):format(t.prompt), "" })
     end
@@ -397,7 +412,15 @@ end
 local function describe(annotation)
   local t = marks.type(annotation)
 
-  return ("%s %s %s %s"):format(t.icon, t.name, require("annotate.export").location(annotation), vim.split(annotation.text, "\n", { plain = true })[1])
+  local entry = annotation.posted and annotation.posted[#annotation.posted]
+
+  return ("%s %s %s %s%s"):format(
+    t.icon,
+    t.name,
+    require("annotate.export").location(annotation),
+    vim.split(annotation.text, "\n", { plain = true })[1],
+    entry and ("  [%s %s]"):format(entry.state, entry.reference) or ""
+  )
 end
 
 --- Snacks picker actions and their keys for the named `M.actions`, leaving out the disabled ones.
@@ -460,7 +483,7 @@ function M.pick()
           text = describe(annotation),
           file = annotation.file and vim.fs.joinpath(r, annotation.file),
           pos = annotation.file and { math.max(annotation.line, 1), 0 },
-          preview = not annotation.file and { text = annotation.text, ft = "markdown" } or nil,
+          preview = not annotation.file and { text = table.concat(vim.list_extend(posted(annotation), { annotation.text }), "\n"), ft = "markdown" } or nil,
           annotation = annotation,
         }
       end, store.all())

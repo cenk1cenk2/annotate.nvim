@@ -45,6 +45,9 @@ local subcommands = {
   preview = function()
     require("annotate").preview()
   end,
+  publish = function(_, submit)
+    require("annotate").publish({ publish = submit or nil })
+  end,
   clear = function(_, force)
     require("annotate").clear({ force = force })
   end,

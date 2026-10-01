@@ -29,6 +29,47 @@ function M.location(annotation)
   return lines == "" and annotation.file or ("%s:%s"):format(annotation.file, lines)
 end
 
+--- Orders annotations by file, then line, then creation, repository notes first.
+---@param a annotate.Annotation
+---@param b annotate.Annotation
+---@return boolean
+function M.compare(a, b)
+  if a.file ~= b.file then
+    return (a.file or "") < (b.file or "")
+  end
+  if a.line ~= b.line then
+    return a.line < b.line
+  end
+
+  return a.created_at < b.created_at
+end
+
+--- Groups annotations by type in the configured order, unknown types last, each group ordered by `compare`.
+---@param annotations annotate.Annotation[]
+---@return { type: annotate.Type, annotations: annotate.Annotation[] }[]
+function M.sections(annotations)
+  local types = vim.deepcopy(config.options.types)
+  local grouped = {}
+  for _, annotation in ipairs(annotations) do
+    if not config.type(annotation.type) and not grouped[annotation.type] then
+      table.insert(types, { key = annotation.type, name = annotation.type, prompt = "" })
+    end
+
+    grouped[annotation.type] = grouped[annotation.type] or {}
+    table.insert(grouped[annotation.type], annotation)
+  end
+
+  local sections = {}
+  for _, t in ipairs(types) do
+    if grouped[t.key] then
+      table.sort(grouped[t.key], M.compare)
+      table.insert(sections, { type = t, annotations = grouped[t.key] })
+    end
+  end
+
+  return sections
+end
+
 --- Renders annotations into the markdown document handed to an agent.
 ---@param annotations annotate.Annotation[]
 ---@param opts? annotate.ExportOptions
@@ -41,29 +82,19 @@ function M.render(annotations, opts)
     return cfg.format(annotations, opts, config.options)
   end
 
-  local types = vim.deepcopy(config.options.types)
-  local grouped = {}
-  for _, annotation in ipairs(annotations) do
-    if not config.type(annotation.type) and not grouped[annotation.type] then
-      table.insert(types, { key = annotation.type, name = annotation.type, prompt = "" })
-    end
-
-    grouped[annotation.type] = grouped[annotation.type] or {}
-    table.insert(grouped[annotation.type], annotation)
-  end
-
-  types = vim.tbl_filter(function(t)
-    return grouped[t.key] ~= nil and (not opts.types or vim.list_contains(opts.types, t.key))
-  end, types)
+  local sections = vim.tbl_filter(function(section)
+    return not opts.types or vim.list_contains(opts.types, section.type.key)
+  end, M.sections(annotations))
 
   local lines = { opts.prompt or cfg.prompt, "", ("## %s"):format(cfg.headings.description), "" }
-  for _, t in ipairs(types) do
+  for _, section in ipairs(sections) do
+    local t = section.type
     table.insert(lines, t.prompt ~= "" and ("- %s: %s"):format(cfg.label(t), t.prompt) or ("- %s"):format(cfg.label(t)))
   end
 
   local compared = {}
-  for _, t in ipairs(types) do
-    for _, annotation in ipairs(grouped[t.key]) do
+  for _, section in ipairs(sections) do
+    for _, annotation in ipairs(section.annotations) do
       if annotation.context then
         local pair = ("- `%s` .. `%s`"):format(annotation.context.left, annotation.context.right)
         if not vim.list_contains(compared, pair) then
@@ -78,28 +109,17 @@ function M.render(annotations, opts)
     vim.list_extend(lines, compared)
   end
 
-  for index, t in ipairs(types) do
+  for index, section in ipairs(sections) do
     if index > 1 then
       vim.list_extend(lines, { "", cfg.separator })
     end
-    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(t)), "" })
+    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(section.type)), "" })
 
-    table.sort(grouped[t.key], function(a, b)
-      if a.file ~= b.file then
-        return (a.file or "") < (b.file or "")
-      end
-      if a.line ~= b.line then
-        return a.line < b.line
-      end
-
-      return a.created_at < b.created_at
-    end)
-
-    for i, annotation in ipairs(grouped[t.key]) do
+    for i, annotation in ipairs(section.annotations) do
       if i > 1 then
         table.insert(lines, "")
       end
-      vim.list_extend(lines, { cfg.heading(annotation, t, M.location(annotation)), "" })
+      vim.list_extend(lines, { cfg.heading(annotation, section.type, M.location(annotation)), "" })
       vim.list_extend(lines, vim.split(annotation.text, "\n", { plain = true }))
     end
   end

@@ -9,6 +9,7 @@ Leave typed notes on lines, ranges and whole files of a git repository, on ordin
 - Notes follow their lines while you edit; the new positions are written back on save.
 - Source based system, where each source decides which buffers it can annotate and how a line maps to a repository location. Ordinary files and [diffview](https://github.com/dlyongemallo/diffview-plus.nvim) buffers are supported out of the box.
 - Export to a file, the clipboard, or your own function.
+- Publish the notes to the merge request or pull request of the current branch as review comments, on GitLab and GitHub.
 
 ## Requirements
 
@@ -16,6 +17,7 @@ Leave typed notes on lines, ranges and whole files of a git repository, on ordin
 - `git` on the `PATH`.
 - [snacks.nvim](https://github.com/folke/snacks.nvim) is recommended for the input window, the picker, the hover float and the preview. Without it the input falls back to `vim.ui.input`, the picker to `vim.ui.select` and the hover float to `vim.lsp.util.open_floating_preview`.
 - [diffview-plus.nvim](https://github.com/dlyongemallo/diffview-plus.nvim) is optional, for annotating revisions inside diff views.
+- [glab](https://gitlab.com/gitlab-org/cli) or [gh](https://cli.github.com), authenticated for the host of the remote, are optional, for publishing.
 
 ## Installation
 
@@ -324,6 +326,26 @@ require("annotate").setup({
     -- fun(annotations, opts, config): markdown, replaces the built-in document when set
     format = nil,
   },
+  -- tried in order against the url of the remote, the first one that matches publishes
+  publishers = { "gitlab", "github" },
+  publish = {
+    -- submit the review instead of only staging it
+    submit = false,
+    -- name of the publisher to use regardless of the remote url, for self-hosted forges
+    platform = nil,
+    gitlab_cli = "glab",
+    github_cli = "gh",
+    -- show what goes where and ask before posting
+    summary = true,
+    summary_keys = {
+      proceed = { "<CR>", "y" },
+      cancel = { "q", "<Esc>", "n" },
+    },
+    -- fun(annotation, type, location): string, the comment posted for a note
+    body = function(annotation, t)
+      return ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text)
+    end,
+  },
 })
 ```
 
@@ -488,6 +510,43 @@ require("annotate").setup({
 })
 ```
 
+## Publishing
+
+`require("annotate").publish(opts)` posts the notes of the repository to the open merge request (GitLab) or pull request (GitHub) of the current branch as review comments, the way a human review lands. Only the note text goes out, never the type prompts.
+
+It talks to the forge through `glab api` and `gh api` (`publish.gitlab_cli`, `publish.github_cli`), which must be authenticated for the host of the remote. Every call runs in the background; progress, the outcome and the CLI's stderr on failure arrive as notifications.
+
+- The remote is `opts.remote`, otherwise the upstream remote of the current branch. Without an upstream the only remote is used, and with several the choice is asked once per repository and session.
+- The publisher is the first of `publishers` whose `match` accepts the remote url: `github.com` goes to GitHub, a host containing `gitlab` to GitLab. `publish.platform` names the publisher for other hosts.
+- The merge or pull request is the open one whose source branch is the upstream branch.
+- Publishing refuses when the local `HEAD` is not the head of the merge or pull request, since lines may not match its diff.
+
+### What Goes Where
+
+A note is inside the diff when every line of it falls into one hunk of the file's diff: the new side for working tree notes and notes on the head commit, the old side for notes taken on the merge base (`~` in the export).
+
+| Note | GitLab | GitHub |
+| --- | --- | --- |
+| Lines inside the diff | Draft note positioned on the first line (`new_line`, or `old_line` on the old side) | Review comment on the lines (`line`, `start_line`, `side` `RIGHT` or `LEFT`) |
+| Lines outside the diff | General draft note, prefixed with `` `path:line` `` | File comment, prefixed with `` `path:line` ``, or the review body when the file is not in the diff |
+| Whole file | General draft note naming the file | File comment, or the review body when the file is not in the diff |
+| Repository | General draft note | Review body |
+
+Each comment is `**[<TYPE>]**`, a blank line and the note, changed through `publish.body`.
+
+### Staging and Submitting
+
+Before anything is posted, a float shows the plan in the shape of the export: the target with its branches, URL and head, the totals, then every note with its destination, whether it is new or skipped, and the exact body that is sent. `<CR>` or `y` proceeds, `q`, `<Esc>` or `n` cancels (`publish.summary_keys`). `opts.force` or `publish.summary = false` skips it.
+
+- Staging, the default, leaves everything as drafts only you can see: GitLab draft notes, or a pending GitHub review. Nothing reaches the author.
+- Submitting (`opts.publish = true`, `publish.submit`, or `:Annotate publish!`) asks for the verdict and an optional summary note, then publishes every draft at once, including the ones staged earlier. GitLab offers Comment and Approve: the drafts are published together, the note is posted as a comment, and Approve approves the merge request at its head. GitHub offers Comment, Approve and Request changes: the pending review receives the new comments and is submitted with the verdict and the note as its body. `opts.verdict` and `opts.note` answer up front, cancelling the verdict cancels the submit.
+
+### Duplicates
+
+Every posted note records where it went under `posted`: platform, project, merge or pull request, branches, title, URLs, the comment id and whether it is still a draft. A note already posted to the same merge or pull request is skipped, unless its draft was deleted on the forge in the meantime, in which case it is posted again. A submit marks the staged drafts as published without posting them again. A note can still go to another merge or pull request. `show()` lists where a note was posted, the picker marks it.
+
+`opts.types` publishes a subset of types, `opts.clear` archives the notes once everything was posted.
+
 ## Completion
 
 The input buffer uses the `annotate` filetype, registered as a treesitter alias of markdown, and remembers the buffer it was opened from in `vim.b.annotate_origin`.
@@ -523,10 +582,11 @@ sources = {
 | `quickfix` | Send the notes of the repository to the quickfix list. |
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |
+| `publish` | Stage the notes as drafts on the merge or pull request of the current branch, `publish!` submits the review. |
 | `clear` | Archive the notes of the repository and clear them after confirmation, `clear!` without it. |
 | `restore` | Pick an archive of the repository and restore it. |
 | `clear-archive` | Permanently delete every archive of the repository after confirmation, `clear-archive!` without it. |
 
 ## Health
 
-`:checkhealth annotate` reports the Neovim version and whether file logging is available, whether snacks.nvim and git are available, the repository and store for the working directory, and whether diffview is available.
+`:checkhealth annotate` reports the Neovim version and whether file logging is available, whether snacks.nvim and git are available, the repository and store for the working directory, whether `glab` and `gh` are available for publishing, and whether diffview is available.

@@ -91,6 +91,19 @@ local M = {}
 ---@field heading fun(annotation: annotate.Annotation, type: annotate.Type, location: string): string
 ---@field format? fun(annotations: annotate.Annotation[], opts: annotate.ExportOptions, config: annotate.Config): string
 
+---@class annotate.PublishSummaryKeys
+---@field proceed string[]
+---@field cancel string[]
+
+---@class annotate.PublishConfig
+---@field submit boolean
+---@field platform? string
+---@field gitlab_cli string
+---@field github_cli string
+---@field summary boolean
+---@field summary_keys annotate.PublishSummaryKeys
+---@field body fun(annotation: annotate.Annotation, type: annotate.Type, location: string): string
+
 ---@class annotate.Config
 ---@field log_level? number
 ---@field types? annotate.Type[]
@@ -106,6 +119,8 @@ local M = {}
 ---@field quickfix? annotate.QuickfixConfig
 ---@field notify? annotate.NotifyConfig
 ---@field export? annotate.ExportConfig
+---@field publishers? (string|annotate.Publisher)[]
+---@field publish? annotate.PublishConfig
 
 ---@type annotate.Config
 local defaults = {
@@ -257,6 +272,21 @@ local defaults = {
       return annotation.file and ("### `%s`"):format(location) or ("### %s"):format(location)
     end,
     format = nil,
+  },
+  publishers = { "gitlab", "github" },
+  publish = {
+    submit = false,
+    platform = nil,
+    gitlab_cli = "glab",
+    github_cli = "gh",
+    summary = true,
+    summary_keys = {
+      proceed = { "<CR>", "y" },
+      cancel = { "q", "<Esc>", "n" },
+    },
+    body = function(annotation, t)
+      return ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text)
+    end,
   },
 }
 

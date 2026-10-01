@@ -3,6 +3,7 @@
 ---@field type string
 ---@field text string
 ---@field created_at integer
+---@field posted? annotate.Posted[] where `publish` posted the annotation
 
 local M = {
   ---@type string?

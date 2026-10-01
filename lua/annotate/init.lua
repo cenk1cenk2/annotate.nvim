@@ -16,6 +16,8 @@ local M = {
   clear_archive = require("annotate.api").clear_archive,
   export = require("annotate.export").export,
   preview = require("annotate.export").preview,
+  publishers = require("annotate.publishers"),
+  publish = require("annotate.publishers").publish,
 }
 
 --- Configures the annotate plugin.

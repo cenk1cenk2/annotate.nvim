@@ -6,7 +6,12 @@ local config = require("annotate.config")
 
 ---@alias annotate.InputCallback fun(type_key: string?, text: string?)
 
----@param opts { type?: string, text?: string }
+---@class annotate.InputOptions
+---@field type? string
+---@field text? string
+---@field title? string fixed title for free text that has no type, cycling is disabled
+
+---@param opts annotate.InputOptions
 ---@param callback annotate.InputCallback
 function M.fallback(opts, callback)
   if not M.warned then
@@ -16,7 +21,7 @@ function M.fallback(opts, callback)
 
   local t = config.type(opts.type) or config.options.types[1]
 
-  vim.ui.input({ prompt = ("%s %s: "):format(t.icon, t.name), default = opts.text }, function(text)
+  vim.ui.input({ prompt = opts.title and ("%s: "):format(opts.title) or ("%s %s: "):format(t.icon, t.name), default = opts.text }, function(text)
     text = text and vim.trim(text) or ""
 
     if text == "" then
@@ -78,7 +83,7 @@ function M.title(types, index, width)
 end
 
 --- Opens the annotation editor, calling back with the chosen type and text, or nils when cancelled or empty.
----@param opts { type?: string, text?: string }
+---@param opts annotate.InputOptions
 ---@param callback annotate.InputCallback
 function M.open(opts, callback)
   local ok, snacks = pcall(require, "snacks")
@@ -93,6 +98,19 @@ function M.open(opts, callback)
   index = index or 1
 
   local result = {}
+
+  local function title(self)
+    self:set_title(opts.title and (" %s "):format(opts.title) or M.title(types, index, vim.api.nvim_win_get_width(self.win)), cfg.title_pos)
+  end
+
+  local function cycle(self, step)
+    if opts.title then
+      return
+    end
+
+    index = (index - 1 + step) % #types + 1
+    title(self)
+  end
 
   local win = snacks.win({
     position = cfg.position,
@@ -118,8 +136,7 @@ function M.open(opts, callback)
       [cfg.keys.cycle] = {
         cfg.keys.cycle,
         function(self)
-          index = index % #types + 1
-          self:set_title(M.title(types, index, vim.api.nvim_win_get_width(self.win)), cfg.title_pos)
+          cycle(self, 1)
         end,
         mode = { "i", "n" },
         desc = "Cycle annotation type",
@@ -127,8 +144,7 @@ function M.open(opts, callback)
       [cfg.keys.cycle_prev] = {
         cfg.keys.cycle_prev,
         function(self)
-          index = (index - 2) % #types + 1
-          self:set_title(M.title(types, index, vim.api.nvim_win_get_width(self.win)), cfg.title_pos)
+          cycle(self, -1)
         end,
         mode = { "i", "n" },
         desc = "Cycle annotation type backwards",
@@ -172,7 +188,7 @@ function M.open(opts, callback)
     end,
   })
 
-  win:set_title(M.title(types, index, vim.api.nvim_win_get_width(win.win)), cfg.title_pos)
+  title(win)
 
   if not opts.text then
     vim.cmd.startinsert()
