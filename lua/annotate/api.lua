@@ -200,6 +200,14 @@ function M.add_file(opts)
   end
 end
 
+--- Adds a note about the repository as a whole, attached to no file.
+---@param opts? { type?: string }
+function M.add_repository(opts)
+  if root() then
+    create({ line = 0 }, opts or {})
+  end
+end
+
 --- Edits the annotation under the cursor.
 function M.edit()
   local annotations = under_cursor()
@@ -422,6 +430,14 @@ function M.pick()
   end
 
   local function open(annotation)
+    if not annotation.file then
+      return input.open({ type = annotation.type, text = annotation.text }, function(type_key, text)
+        if type_key then
+          store.update(annotation.id, { type = type_key, text = text })
+        end
+      end)
+    end
+
     vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(r, annotation.file)))
     vim.api.nvim_win_set_cursor(0, { math.min(math.max(annotation.line, 1), vim.api.nvim_buf_line_count(0)), 0 })
   end
@@ -442,8 +458,9 @@ function M.pick()
       return vim.tbl_map(function(annotation)
         return {
           text = describe(annotation),
-          file = vim.fs.joinpath(r, annotation.file),
-          pos = { math.max(annotation.line, 1), 0 },
+          file = annotation.file and vim.fs.joinpath(r, annotation.file),
+          pos = annotation.file and { math.max(annotation.line, 1), 0 },
+          preview = not annotation.file and { text = annotation.text, ft = "markdown" } or nil,
           annotation = annotation,
         }
       end, store.all())
@@ -454,7 +471,13 @@ function M.pick()
       list = { keys = keys },
     },
     format = "text",
-    preview = "file",
+    preview = function(ctx)
+      if ctx.item.file then
+        return require("snacks").picker.preview.file(ctx)
+      end
+
+      return require("snacks").picker.preview.preview(ctx)
+    end,
     confirm = function(picker, item)
       picker:close()
       if item then
@@ -697,16 +720,21 @@ function M.quickfix()
 
   vim.fn.setqflist({}, " ", {
     title = config.options.quickfix.title,
-    items = vim.tbl_map(function(annotation)
-      local t = marks.type(annotation)
+    items = vim.tbl_map(
+      function(annotation)
+        local t = marks.type(annotation)
 
-      return {
-        filename = vim.fs.joinpath(r, annotation.file),
-        lnum = math.max(annotation.line, 1),
-        end_lnum = annotation.line_end,
-        text = ("[%s]%s %s"):format(t.name:upper(), annotation.rev and (" @ %s"):format(annotation.rev) or "", vim.split(annotation.text, "\n", { plain = true })[1]),
-      }
-    end, store.all()),
+        return {
+          filename = vim.fs.joinpath(r, annotation.file),
+          lnum = math.max(annotation.line, 1),
+          end_lnum = annotation.line_end,
+          text = ("[%s]%s %s"):format(t.name:upper(), annotation.rev and (" @ %s"):format(annotation.rev) or "", vim.split(annotation.text, "\n", { plain = true })[1]),
+        }
+      end,
+      vim.tbl_filter(function(annotation)
+        return annotation.file ~= nil
+      end, store.all())
+    ),
   })
 
   if config.options.quickfix.open then

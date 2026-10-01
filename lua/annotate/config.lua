@@ -84,6 +84,7 @@ local M = {}
 ---@field clipboard_message string
 ---@field dir string
 ---@field filename string|fun(repository: string): string
+---@field repository string
 ---@field headings annotate.ExportHeadings
 ---@field separator string
 ---@field label fun(type: annotate.Type): string
@@ -242,6 +243,7 @@ local defaults = {
     filename = function(repository)
       return ("%s-%s.md"):format(repository, os.date("%Y%m%d-%H%M%S"))
     end,
+    repository = "repository",
     headings = {
       description = "Description",
       compared = "Compared",

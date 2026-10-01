@@ -15,6 +15,9 @@ local subcommands = {
   file = function()
     require("annotate").add_file()
   end,
+  repository = function()
+    require("annotate").add_repository()
+  end,
   edit = function()
     require("annotate").edit()
   end,

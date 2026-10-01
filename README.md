@@ -54,6 +54,13 @@ return {
       desc = "Annotate file",
     },
     {
+      "<leader>ag",
+      function()
+        require("annotate").add_repository()
+      end,
+      desc = "Annotate the repository",
+    },
+    {
       "<leader>ae",
       function()
         require("annotate").edit()
@@ -297,6 +304,8 @@ require("annotate").setup({
     filename = function(repository)
       return ("%s-%s.md"):format(repository, os.date("%Y%m%d-%H%M%S"))
     end,
+    -- location shown for notes attached to no file (`add_repository`); export lists them as plain items
+    repository = "repository",
     -- section headings of the document
     headings = {
       description = "Description",
@@ -489,6 +498,7 @@ sources = {
 | `add` | Annotate the current line, or the given range with `:'<,'>Annotate add`. |
 | `add-type` | Like `add`, choosing the type from a list first, showing each type's prompt. |
 | `file` | Annotate the current file as a whole. |
+| `repository` | Add a note about the repository as a whole, attached to no file, like a general comment on a pull request. |
 | `edit` | Edit the note under the cursor. |
 | `show` | Show the notes under the cursor in a float. |
 | `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |

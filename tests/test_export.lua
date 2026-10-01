@@ -152,4 +152,13 @@ T["formats revision ranges"] = function()
   eq(export.location(note({ file = "a.lua", line = 2, line_end = 4, rev = "abcdef12345" })), "a.lua:~2-4 @ abcdef12345")
 end
 
+T["renders repository notes without a location, before file notes"] = function()
+  local markdown = export.render({
+    note({ type = "general", file = "a.lua", line = 3, text = "pinned" }),
+    note({ type = "general", line = 0, text = "about the whole repository" }),
+  })
+
+  eq(markdown:match("## %[GENERAL%]\n\n(.-)\n$"), "- about the whole repository\n- `a.lua:3` - pinned")
+end
+
 return T

@@ -13,6 +13,10 @@ local store = require("annotate.store")
 ---@param annotation annotate.Annotation
 ---@return string
 function M.location(annotation)
+  if not annotation.file then
+    return config.options.export.repository
+  end
+
   local lines = ""
   if annotation.line > 0 then
     lines = annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end) or tostring(annotation.line)
@@ -82,7 +86,7 @@ function M.render(annotations, opts)
 
     table.sort(grouped[t.key], function(a, b)
       if a.file ~= b.file then
-        return a.file < b.file
+        return (a.file or "") < (b.file or "")
       end
       if a.line ~= b.line then
         return a.line < b.line
@@ -93,7 +97,7 @@ function M.render(annotations, opts)
 
     for _, annotation in ipairs(grouped[t.key]) do
       local text = vim.split(annotation.text, "\n", { plain = true })
-      table.insert(lines, ("- `%s` - %s"):format(M.location(annotation), text[1]))
+      table.insert(lines, annotation.file and ("- `%s` - %s"):format(M.location(annotation), text[1]) or ("- %s"):format(text[1]))
       for i = 2, #text do
         table.insert(lines, text[i] == "" and "" or "  " .. text[i])
       end

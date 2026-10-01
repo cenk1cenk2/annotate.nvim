@@ -2,6 +2,7 @@ local M = {
   sources = require("annotate.sources"),
   add = require("annotate.api").add,
   add_file = require("annotate.api").add_file,
+  add_repository = require("annotate.api").add_repository,
   add_with_type = require("annotate.api").add_with_type,
   edit = require("annotate.api").edit,
   show = require("annotate.api").show,

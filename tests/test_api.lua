@@ -293,4 +293,30 @@ T["type action cycles to the next type and wraps around"] = function()
   eq(p.refreshed, 1)
 end
 
+T["add_repository stores a note attached to no file"] = function()
+  input.open = function(_, callback)
+    callback("general", "about everything")
+  end
+
+  api.add_repository()
+
+  local stored = store.load(true)
+  eq({ stored[1].file, stored[1].line, stored[1].text }, { nil, 0, "about everything" })
+end
+
+T["quickfix leaves repository notes out"] = function()
+  store.add({ type = "general", line = 0, text = "repository" })
+  store.add({ type = "bug", file = "a.lua", line = 1, text = "pinned" })
+  require("annotate").setup({ quickfix = { open = false } })
+
+  api.quickfix()
+
+  eq(
+    vim.tbl_map(function(item)
+      return item.text:match("pinned") ~= nil
+    end, vim.fn.getqflist()),
+    { true }
+  )
+end
+
 return T
