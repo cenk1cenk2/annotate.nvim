@@ -388,18 +388,47 @@ T["add_repository stores a note attached to no file"] = function()
   eq({ stored[1].file, stored[1].line, stored[1].text }, { nil, 0, "about everything" })
 end
 
-T["quickfix leaves repository notes out"] = function()
-  store.add({ type = "general", line = 0, text = "repository" })
-  store.add({ type = "bug", file = "a.lua", line = 1, text = "pinned" })
+---@param state string
+---@param reference string
+---@return annotate.Posted
+local function posted(state, reference)
+  return { state = state, reference = reference, platform = "gitlab", target = 5 }
+end
+
+T["picker rows show the type, location, first line and where the note was posted"] = function()
+  require("annotate").setup()
+  local range = store.add({ type = "bug", file = "a.lua", line = 1, line_end = 2, text = "broken\nmore" })
+  store.update(range.id, { posted = { posted("draft", "!5"), posted("published", "#1") } })
+  local whole = store.add({ type = "question", file = "a.lua", line = 0, text = "why" })
+  local rev = store.add({ type = "issue", file = "a.lua", line = 2, rev = "abcdef12345", text = "old" })
+  local repository = store.add({ type = "general", line = 0, text = "overall" })
+  store.update(repository.id, { posted = { posted("queued", "#1") } })
+
+  eq(vim.tbl_map(api.describe, { store.get(range.id), whole, rev, store.get(repository.id) }), {
+    require("annotate.config").type("bug").icon .. " Bug  a.lua:1-2  broken  draft !5, published #1",
+    require("annotate.config").type("question").icon .. " Question  a.lua  why",
+    require("annotate.config").type("issue").icon .. " Issue  a.lua:~2 @ abcdef12345  old",
+    require("annotate.config").type("general").icon .. " General  repository  overall  queued #1",
+  })
+end
+
+T["quickfix lists every note, repository notes without a file"] = function()
+  local pinned = store.add({ type = "bug", file = "a.lua", line = 2, text = "pinned" })
+  store.update(pinned.id, { posted = { posted("draft", "!5") } })
+  local repository = store.add({ type = "general", line = 0, text = "repository\nmore" })
   require("annotate").setup({ quickfix = { open = false } })
 
   api.quickfix()
 
+  local items = vim.fn.getqflist({ items = 1 }).items
   eq(
     vim.tbl_map(function(item)
-      return item.text:match("pinned") ~= nil
-    end, vim.fn.getqflist()),
-    { true }
+      return { item.text, item.valid, item.lnum, item.type, item.bufnr ~= 0, item.user_data }
+    end, items),
+    {
+      { "[BUG] a.lua:2  pinned  (draft !5)", 1, 2, "B", true, { id = pinned.id, type = "bug", posted = "draft !5" } },
+      { "[GENERAL] repository  repository", 0, 0, "G", false, { id = repository.id, type = "general" } },
+    }
   )
 end
 

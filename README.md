@@ -425,6 +425,8 @@ A type with `prefill = "selection"`, like `rewrite`, starts a new note with the 
 
 ### Picker
 
+Each row shows the type icon and name, the location (`path:line`, `path:line-end`, `path` for a whole file, `repository`, with `~` and `@ <rev>` for a revision), the first line of the note, and where it was posted, like `draft !5, published #1`.
+
 `<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. The `select` backend has no actions.
 
 - `edit` opens the input on the note and updates it in place.
@@ -661,7 +663,7 @@ sources = {
 | `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |
 | `next` / `prev` | Jump to the next or previous note in the buffer. |
 | `pick` | Pick a note of the repository and jump to it. |
-| `quickfix` | Send the notes of the repository to the quickfix list. |
+| `quickfix` | Send every note of the repository to the quickfix list as `[TYPE] <location>  <first line>  (<posted>)`. Repository notes are listed without a file and are not jumped to. Each entry's `type` is the first letter of its type name and its `user_data` holds `id`, `type` and `posted`, for quickfix plugins to filter on. |
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |
 | `publish` | Stage the notes as drafts on the merge or pull request of the current branch, `publish!` submits the review. |

@@ -407,19 +407,35 @@ function M.prev()
   jump(false)
 end
 
+--- Where an annotation was posted, like `draft !5, published #1`, nil when it never was.
+---@param annotation annotate.Annotation
+---@return string?
+function M.status(annotation)
+  if not annotation.posted or #annotation.posted == 0 then
+    return nil
+  end
+
+  return table.concat(
+    vim.tbl_map(function(entry)
+      return ("%s %s"):format(entry.state, entry.reference)
+    end, annotation.posted),
+    ", "
+  )
+end
+
+--- Picker row of an annotation: its type, location, first line and where it was posted.
 ---@param annotation annotate.Annotation
 ---@return string
-local function describe(annotation)
+function M.describe(annotation)
   local t = marks.type(annotation)
+  local status = M.status(annotation)
 
-  local entry = annotation.posted and annotation.posted[#annotation.posted]
-
-  return ("%s %s %s %s%s"):format(
+  return ("%s %s  %s  %s%s"):format(
     t.icon,
     t.name,
     require("annotate.export").location(annotation),
     vim.split(annotation.text, "\n", { plain = true })[1],
-    entry and ("  [%s %s]"):format(entry.state, entry.reference) or ""
+    status and ("  %s"):format(status) or ""
   )
 end
 
@@ -466,7 +482,7 @@ function M.pick()
   end
 
   if backend() == "select" then
-    return vim.ui.select(annotations, { prompt = config.options.picker.title, format_item = describe }, function(annotation)
+    return vim.ui.select(annotations, { prompt = config.options.picker.title, format_item = M.describe }, function(annotation)
       if annotation then
         open(annotation)
       end
@@ -480,7 +496,7 @@ function M.pick()
     finder = function()
       return vim.tbl_map(function(annotation)
         return {
-          text = describe(annotation),
+          text = M.describe(annotation),
           file = annotation.file and vim.fs.joinpath(r, annotation.file),
           pos = annotation.file and { math.max(annotation.line, 1), 0 },
           preview = not annotation.file and { text = table.concat(vim.list_extend(posted(annotation), { annotation.text }), "\n"), ft = "markdown" } or nil,
@@ -757,21 +773,25 @@ function M.quickfix()
 
   vim.fn.setqflist({}, " ", {
     title = config.options.quickfix.title,
-    items = vim.tbl_map(
-      function(annotation)
-        local t = marks.type(annotation)
+    items = vim.tbl_map(function(annotation)
+      local t = marks.type(annotation)
+      local status = M.status(annotation)
 
-        return {
-          filename = vim.fs.joinpath(r, annotation.file),
-          lnum = math.max(annotation.line, 1),
-          end_lnum = annotation.line_end,
-          text = ("[%s]%s %s"):format(t.name:upper(), annotation.rev and (" @ %s"):format(annotation.rev) or "", vim.split(annotation.text, "\n", { plain = true })[1]),
-        }
-      end,
-      vim.tbl_filter(function(annotation)
-        return annotation.file ~= nil
-      end, store.all())
-    ),
+      return {
+        filename = annotation.file and vim.fs.joinpath(r, annotation.file),
+        lnum = annotation.file and math.max(annotation.line, 1) or 0,
+        end_lnum = annotation.line_end,
+        valid = annotation.file and 1 or 0,
+        type = t.name:sub(1, 1):upper(),
+        text = ("[%s] %s  %s%s"):format(
+          t.name:upper(),
+          require("annotate.export").location(annotation),
+          vim.split(annotation.text, "\n", { plain = true })[1],
+          status and ("  (%s)"):format(status) or ""
+        ),
+        user_data = { id = annotation.id, type = annotation.type, posted = status },
+      }
+    end, store.all()),
   })
 
   if config.options.quickfix.open then
