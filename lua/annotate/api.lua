@@ -663,7 +663,7 @@ local function archive_label(path)
     table.insert(types, ("%d %s"):format(count, key))
   end
 
-  local year, month, day, hour, min = vim.fs.basename(path):match("%-(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)%d%d%.json$")
+  local year, month, day, hour, min = vim.fs.basename(path):match("%-(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)%d%d[%-%d]*%.json$")
 
   return ("%s-%s-%s %s:%s · %d notes · %s"):format(year, month, day, hour, min, #annotations, table.concat(types, ", "))
 end

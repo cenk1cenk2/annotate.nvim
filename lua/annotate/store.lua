@@ -184,7 +184,11 @@ function M.archive()
   end
 
   vim.fn.mkdir(M.archive_dir(), "p")
-  local target = vim.fs.joinpath(M.archive_dir(), ("%s-%s.json"):format(M.hash(M.root), os.date("%Y%m%d-%H%M%S")))
+  local stem = vim.fs.joinpath(M.archive_dir(), ("%s-%s"):format(M.hash(M.root), os.date("%Y%m%d-%H%M%S")))
+  local target, n = stem .. ".json", 1
+  while vim.uv.fs_stat(target) do
+    target, n = ("%s-%d.json"):format(stem, n), n + 1
+  end
   assert(vim.uv.fs_rename(path, target))
 
   log.info(("store archived: path=%s target=%s"):format(path, target))

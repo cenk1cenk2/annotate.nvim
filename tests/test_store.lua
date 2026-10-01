@@ -157,4 +157,14 @@ T["prune removes archives older than 30 days"] = function()
   eq(vim.uv.fs_stat(fresh) ~= nil, true)
 end
 
+T["archives in the same second never overwrite each other"] = function()
+  store.add({ type = "bug", file = "a.lua", line = 1, text = "first" })
+  local first = store.archive()
+  store.add({ type = "bug", file = "a.lua", line = 1, text = "second" })
+  local second = store.archive()
+
+  eq(first ~= second, true)
+  eq(vim.uv.fs_stat(first) ~= nil and vim.uv.fs_stat(second) ~= nil, true)
+end
+
 return T
