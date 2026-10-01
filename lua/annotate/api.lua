@@ -16,6 +16,11 @@ local function notify(message, level)
   vim.notify(message, level or vim.log.levels.WARN, { title = config.options.notify.title })
 end
 
+---@return "snacks"|"select"
+local function backend()
+  return config.options.picker.backend or (pcall(require, "snacks") and "snacks" or "select")
+end
+
 ---@return string?
 local function root()
   local r = git.root()
@@ -133,10 +138,9 @@ end
 --- Lets the user choose an annotation type, calling back with its key unless cancelled.
 ---@param callback fun(key: string)
 local function choose_type(callback)
-  local cfg = config.options.picker
   local types = config.options.types
 
-  if (cfg.backend or (pcall(require, "snacks") and "snacks" or "select")) == "select" then
+  if backend() == "select" then
     return vim.ui.select(types, {
       prompt = "Annotation type",
       format_item = function(t)
@@ -388,6 +392,23 @@ local function describe(annotation)
   return ("%s %s %s %s"):format(t.icon, t.name, require("annotate.export").location(annotation), vim.split(annotation.text, "\n", { plain = true })[1])
 end
 
+--- Snacks picker actions and their keys for the named `M.actions`, leaving out the disabled ones.
+---@param names string[]
+---@return table<string, table>, table<string, table>
+local function bind(names)
+  local actions = {}
+  local keys = {}
+  for _, name in ipairs(names) do
+    local key = config.options.picker.keys[name]
+    if key then
+      actions["annotate_" .. name] = M.actions[name]
+      keys[key] = { "annotate_" .. name, mode = { "i", "n" } }
+    end
+  end
+
+  return actions, keys
+end
+
 --- Picks an annotation of the repository and jumps to it.
 function M.pick()
   local r = root()
@@ -405,27 +426,18 @@ function M.pick()
     vim.api.nvim_win_set_cursor(0, { math.min(math.max(annotation.line, 1), vim.api.nvim_buf_line_count(0)), 0 })
   end
 
-  local cfg = config.options.picker
-  local backend = cfg.backend or (pcall(require, "snacks") and "snacks" or "select")
-  if backend == "select" then
-    return vim.ui.select(annotations, { prompt = cfg.title, format_item = describe }, function(annotation)
+  if backend() == "select" then
+    return vim.ui.select(annotations, { prompt = config.options.picker.title, format_item = describe }, function(annotation)
       if annotation then
         open(annotation)
       end
     end)
   end
 
-  local actions = {}
-  local keys = {}
-  for name, key in pairs(cfg.keys) do
-    if key then
-      actions["annotate_" .. name] = M.actions[name]
-      keys[key] = { "annotate_" .. name, mode = { "i", "n" } }
-    end
-  end
+  local actions, keys = bind({ "edit", "delete", "delete_all", "type" })
 
   require("snacks").picker.pick({
-    title = cfg.title,
+    title = config.options.picker.title,
     finder = function()
       return vim.tbl_map(function(annotation)
         return {
@@ -504,6 +516,43 @@ M.actions = {
       confirm("Archive and clear all annotations?", clear)
     end,
   },
+  restore_delete = {
+    desc = "Delete archives permanently",
+    action = function(picker)
+      local paths = vim.tbl_map(function(item)
+        return item.path
+      end, picker:selected({ fallback = true }))
+      if #paths == 0 then
+        return
+      end
+
+      local function delete()
+        store.remove_archives(paths)
+        picker:refresh()
+      end
+
+      if config.options.picker.force.delete then
+        return delete()
+      end
+
+      confirm(("Delete %d archives permanently?"):format(#paths), delete)
+    end,
+  },
+  restore_clear = {
+    desc = "Delete every archive permanently",
+    action = function(picker)
+      local function clear()
+        picker:close()
+        M.clear_archive({ force = true })
+      end
+
+      if config.options.picker.force.restore_clear then
+        return clear()
+      end
+
+      confirm("Delete every archive of this repository permanently?", clear)
+    end,
+  },
   type = {
     desc = "Cycle annotation type",
     action = function(picker)
@@ -519,6 +568,125 @@ M.actions = {
     end,
   },
 }
+
+--- Describes an archive by its time, its note count and its notes per type.
+---@param path string
+---@return string
+local function archive_label(path)
+  local annotations = store.read(path)
+
+  local counts = {}
+  for _, annotation in ipairs(annotations) do
+    counts[annotation.type] = (counts[annotation.type] or 0) + 1
+  end
+
+  local types = {}
+  for _, t in ipairs(config.options.types) do
+    if counts[t.key] then
+      table.insert(types, ("%d %s"):format(counts[t.key], t.key))
+      counts[t.key] = nil
+    end
+  end
+  for key, count in vim.spairs(counts) do
+    table.insert(types, ("%d %s"):format(count, key))
+  end
+
+  local year, month, day, hour, min = vim.fs.basename(path):match("%-(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)%d%d%.json$")
+
+  return ("%s-%s-%s %s:%s · %d notes · %s"):format(year, month, day, hour, min, #annotations, table.concat(types, ", "))
+end
+
+--- Restores an archive, asking whether to merge or replace when the store is not empty and no mode is given.
+---@param path string
+---@param mode? "merge"|"replace"
+local function restore(path, mode)
+  local function run(chosen)
+    local count = store.restore(path, chosen)
+    marks.refresh()
+
+    notify(("Restored %d annotations from %s."):format(count, path), vim.log.levels.INFO)
+  end
+
+  if mode or #store.all() == 0 then
+    return run(mode or "merge")
+  end
+
+  vim.ui.select({ "Merge", "Replace", "Cancel" }, { prompt = "The repository has annotations, restore the archive by" }, function(choice)
+    if choice == "Merge" or choice == "Replace" then
+      run(choice:lower())
+    end
+  end)
+end
+
+--- Picks an archive of the repository and restores it.
+---@param opts? { mode?: "merge"|"replace" } skips the merge or replace question
+function M.restore(opts)
+  opts = opts or {}
+  if not root() then
+    return
+  end
+
+  if #store.archives() == 0 then
+    return notify("There are no archives.", vim.log.levels.INFO)
+  end
+
+  if backend() == "select" then
+    return vim.ui.select(store.archives(), { prompt = "Restore archive", format_item = archive_label }, function(path)
+      if path then
+        restore(path, opts.mode)
+      end
+    end)
+  end
+
+  local actions, keys = bind({ "restore_delete", "restore_clear" })
+
+  require("snacks").picker.pick({
+    title = "Restore archive",
+    finder = function()
+      return vim.tbl_map(function(path)
+        return {
+          text = archive_label(path),
+          path = path,
+          preview = { text = require("annotate.export").render(store.read(path)), ft = "markdown" },
+        }
+      end, store.archives())
+    end,
+    actions = actions,
+    win = {
+      input = { keys = keys },
+      list = { keys = keys },
+    },
+    format = "text",
+    preview = "preview",
+    confirm = function(picker, item)
+      picker:close()
+      if item then
+        restore(item.path, opts.mode)
+      end
+    end,
+  })
+end
+
+--- Permanently deletes every archive of the repository after confirmation.
+---@param opts? { force?: boolean } force skips the confirmation
+function M.clear_archive(opts)
+  if not root() then
+    return
+  end
+
+  local function clear()
+    local archives = store.archives()
+    store.remove_archives(archives)
+
+    notify(("Deleted %d archives."):format(#archives), vim.log.levels.INFO)
+  end
+
+  if (opts or {}).force then
+    return clear()
+  end
+
+  confirm("Delete every archive of this repository permanently?", clear)
+end
 
 --- Sends the annotations of the repository to the quickfix list.
 function M.quickfix()

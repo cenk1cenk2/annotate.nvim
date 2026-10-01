@@ -43,6 +43,12 @@ local subcommands = {
   clear = function(_, force)
     require("annotate").clear({ force = force })
   end,
+  restore = function()
+    require("annotate").restore()
+  end,
+  ["clear-archive"] = function(_, force)
+    require("annotate").clear_archive({ force = force })
+  end,
 }
 
 vim.api.nvim_create_user_command("Annotate", function(cmd)

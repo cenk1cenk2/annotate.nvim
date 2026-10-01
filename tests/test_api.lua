@@ -206,6 +206,34 @@ T["show reports when there is no annotation under the cursor"] = function()
   eq(messages, { "No annotation under the cursor." })
 end
 
+T["restore picks an archive by its label"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  store.add({ file = "a.lua", line = 2, type = "issue", text = "two" })
+  store.archive()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  local prompts = answer({ " · 2 notes · 1 issue, 1 bug" })
+
+  api.restore({ mode = "merge" })
+
+  eq(prompts, { "Restore archive" })
+  eq(texts(), { "one", "two" })
+end
+
+T["clear_archive removes only the archives of the repository"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  store.archive()
+  local other = vim.fs.joinpath(store.archive_dir(), "0000000000000000-20200101-000000.json")
+  vim.fn.writefile({ "{}" }, other)
+
+  api.clear_archive({ force = true })
+
+  eq(store.archives(), {})
+  eq(vim.uv.fs_stat(other) ~= nil, true)
+  os.remove(other)
+end
+
 ---@param annotations annotate.Annotation[]
 local function picker(annotations)
   return {

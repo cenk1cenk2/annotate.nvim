@@ -38,6 +38,24 @@ function M.path()
   return vim.fs.joinpath(M.dir(), M.hash(root) .. ".json")
 end
 
+---@param path string
+---@return annotate.Annotation[]
+function M.read(path)
+  local file = io.open(path, "r")
+  if not file then
+    return {}
+  end
+
+  local content = file:read("*a")
+  file:close()
+
+  if content == "" then
+    return {}
+  end
+
+  return vim.json.decode(content, { luanil = { object = true, array = true } }).annotations or {}
+end
+
 --- Loads the annotations of the current repository, reading the file only when the repository changed.
 ---@param force? boolean
 ---@return annotate.Annotation[]
@@ -48,18 +66,9 @@ function M.load(force)
   end
 
   M.root = root
-  M.annotations = {}
 
   local path = M.path()
-  local file = io.open(path, "r")
-  if file then
-    local content = file:read("*a")
-    file:close()
-
-    if content ~= "" then
-      M.annotations = vim.json.decode(content, { luanil = { object = true, array = true } }).annotations or {}
-    end
-  end
+  M.annotations = M.read(path)
 
   log.debug(("store loaded: path=%s #annotations=%d"):format(path, #M.annotations))
 
@@ -180,6 +189,70 @@ function M.archive()
   log.info(("store archived: path=%s target=%s"):format(path, target))
 
   return target
+end
+
+--- Archives of the current repository, newest first.
+---@return string[]
+function M.archives()
+  M.load()
+
+  local archives = vim.fn.glob(vim.fs.joinpath(M.archive_dir(), M.hash(M.root) .. "-*.json"), false, true)
+  table.sort(archives, function(a, b)
+    return a > b
+  end)
+
+  return archives
+end
+
+--- Restores an archive into the store and removes it from the archive.
+--- An empty store takes the archive as is, otherwise `merge` appends the annotations it does not have yet and `replace` archives the store first.
+---@param path string
+---@param mode "merge"|"replace"
+---@return integer restored
+function M.restore(path, mode)
+  if mode ~= "merge" and mode ~= "replace" then
+    error(("annotate: unknown restore mode: %s"):format(mode))
+  end
+
+  M.load()
+
+  local restored = M.read(path)
+  assert(os.remove(path))
+
+  if mode == "replace" and #M.annotations > 0 then
+    M.archive()
+  end
+
+  local count = 0
+  for _, annotation in ipairs(restored) do
+    local duplicate = vim.iter(M.annotations):any(function(existing)
+      return existing.file == annotation.file
+        and existing.line == annotation.line
+        and existing.line_end == annotation.line_end
+        and existing.rev == annotation.rev
+        and existing.type == annotation.type
+        and existing.text == annotation.text
+    end)
+
+    if not duplicate then
+      table.insert(M.annotations, annotation)
+      count = count + 1
+    end
+  end
+  M.save()
+
+  log.info(("archive restored: path=%s mode=%s #restored=%d"):format(path, mode, count))
+
+  return count
+end
+
+--- Permanently removes archives.
+---@param paths string[]
+function M.remove_archives(paths)
+  for _, path in ipairs(paths) do
+    assert(os.remove(path))
+    log.debug(("archive removed: path=%s"):format(path))
+  end
 end
 
 --- Removes archives older than `archive_days`.

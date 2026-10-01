@@ -11,6 +11,8 @@ local M = {
   pick = require("annotate.api").pick,
   quickfix = require("annotate.api").quickfix,
   clear = require("annotate.api").clear,
+  restore = require("annotate.api").restore,
+  clear_archive = require("annotate.api").clear_archive,
   export = require("annotate.export").export,
   preview = require("annotate.export").preview,
 }

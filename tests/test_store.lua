@@ -86,6 +86,62 @@ T["archive moves the file and clears the store"] = function()
   eq(#store.load(true), 0)
 end
 
+---@return string[]
+local function texts()
+  return vim.tbl_map(function(annotation)
+    return annotation.text
+  end, store.load(true))
+end
+
+T["restore into an empty store takes the archive and removes it"] = function()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  store.add({ file = "a.lua", line = 2, line_end = 3, type = "issue", text = "two" })
+  local archived = store.archive()
+
+  eq(store.restore(archived, "merge"), 2)
+
+  eq(texts(), { "one", "two" })
+  eq(store.load(true)[2].line_end, 3)
+  eq(vim.uv.fs_stat(archived), nil)
+  eq(store.archives(), {})
+end
+
+T["restore merge skips annotations the store already has"] = function()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "same" })
+  store.add({ file = "a.lua", line = 2, type = "bug", text = "archived" })
+  local archived = store.archive()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "same" })
+  store.add({ file = "a.lua", line = 1, type = "issue", text = "same" })
+
+  eq(store.restore(archived, "merge"), 1)
+
+  eq(texts(), { "same", "same", "archived" })
+  eq(store.load(true)[2].type, "issue")
+end
+
+T["restore replace archives the store first"] = function()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  local archived = store.archive()
+  store.add({ file = "a.lua", line = 2, type = "bug", text = "live" })
+
+  store.restore(archived, "replace")
+
+  eq(texts(), { "archived" })
+  local archives = store.archives()
+  eq(#archives, 1)
+  eq(store.read(archives[1])[1].text, "live")
+end
+
+T["restore rejects an unknown mode"] = function()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  local archived = store.archive()
+
+  MiniTest.expect.error(function()
+    store.restore(archived, "append")
+  end, "unknown restore mode")
+  eq(vim.uv.fs_stat(archived) ~= nil, true)
+end
+
 T["prune removes archives older than 30 days"] = function()
   vim.fn.mkdir(store.archive_dir(), "p")
   local old = vim.fs.joinpath(store.archive_dir(), "old.json")

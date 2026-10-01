@@ -50,10 +50,13 @@ local M = {}
 ---@field delete string|false
 ---@field delete_all string|false
 ---@field type string|false
+---@field restore_delete string|false
+---@field restore_clear string|false
 
 ---@class annotate.PickerForce
 ---@field delete boolean
 ---@field delete_all boolean
+---@field restore_clear boolean
 
 ---@class annotate.PickerConfig
 ---@field backend? "snacks"|"select" nil picks snacks when available
@@ -213,10 +216,13 @@ local defaults = {
       delete = "<C-d>",
       delete_all = "<C-x>",
       type = "<C-t>",
+      restore_delete = "<C-d>",
+      restore_clear = "<C-x>",
     },
     force = {
       delete = false,
       delete_all = false,
+      restore_clear = false,
     },
   },
   quickfix = {

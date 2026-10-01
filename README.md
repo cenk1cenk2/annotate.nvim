@@ -4,7 +4,7 @@ Leave typed notes on lines, ranges and whole files of a git repository, on ordin
 
 ## Features
 
-- One store per repository, kept under `store.dir` (`stdpath("data")/annotate` by default), archived instead of deleted when cleared, with archives pruned after `archive_days` (30 by default).
+- One store per repository, kept under `store.dir` (`stdpath("data")/annotate` by default), archived instead of deleted when cleared and restorable from the archive, with archives pruned after `archive_days` (30 by default).
 - Typed notes, where every type carries the instruction the agent receives for it.
 - Notes follow their lines while you edit; the new positions are written back on save.
 - Source based system, where each source decides which buffers it can annotate and how a line maps to a repository location. Ordinary files and [diffview](https://github.com/dlyongemallo/diffview-plus.nvim) buffers are supported out of the box.
@@ -264,11 +264,15 @@ require("annotate").setup({
       delete = "<C-d>",
       delete_all = "<C-x>",
       type = "<C-t>",
+      -- in the restore picker
+      restore_delete = "<C-d>",
+      restore_clear = "<C-x>",
     },
-    -- skip the confirmation of the delete and delete_all actions
+    -- skip the confirmation of the delete and delete_all actions, delete also covers restore_delete
     force = {
       delete = false,
       delete_all = false,
+      restore_clear = false,
     },
   },
   quickfix = {
@@ -337,6 +341,17 @@ The input is a floating snacks.nvim window with markdown highlighting. The title
 `show`, `edit` and `delete` act on every note covering the cursor line, ranges included. On line 1 a whole-file note counts when nothing else covers it. When several notes overlap, `edit` and `delete` ask which one through `vim.ui.select`, and `delete` also offers all of them.
 
 `delete({ force = true })` and `clear({ force = true })` skip the confirmation, never the choice between overlapping notes.
+
+## Archive
+
+`clear` never deletes notes: it moves the store of the repository into the archive under `store.dir`, named by the time it was archived. Archives older than `archive_days` are pruned.
+
+`require("annotate").restore(opts)` lists the archives of the repository, newest first, with their time, note count and notes per type, previewing each one as the export markdown. Choosing one restores it and removes it from the archive.
+
+- An empty store takes the archive as it is.
+- Otherwise it asks whether to merge or replace, `opts.mode = "merge" | "replace"` answers up front. Merge appends the notes the store does not have yet, replace archives the store first so nothing is lost.
+
+In the snacks.nvim picker, `restore_delete` permanently deletes the selected archives and keeps the picker open, `restore_clear` permanently deletes every archive of the repository and closes it. Both confirm unless `picker.force.delete` or `picker.force.restore_clear` is set. `require("annotate").clear_archive({ force = true })` does the same as `restore_clear` outside the picker.
 
 ## Sources
 
@@ -464,6 +479,8 @@ require("annotate").setup({
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |
 | `clear` | Archive the notes of the repository and clear them after confirmation, `clear!` without it. |
+| `restore` | Pick an archive of the repository and restore it. |
+| `clear-archive` | Permanently delete every archive of the repository after confirmation, `clear-archive!` without it. |
 
 ## Health
 
