@@ -3,6 +3,8 @@ if vim.g.loaded_annotate then
 end
 vim.g.loaded_annotate = true
 
+vim.treesitter.language.register("markdown", "annotate")
+
 local subcommands = {
   add = function(cmd)
     require("annotate").add(cmd.range > 0 and { line1 = cmd.line1, line2 = cmd.line2 } or nil)

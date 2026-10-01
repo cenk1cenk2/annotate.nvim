@@ -194,7 +194,7 @@ local defaults = {
       return (" %s/%s cycle  %s submit  %s close "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.close)
     end,
     footer_pos = "center",
-    filetype = "markdown",
+    filetype = "annotate",
     markdown = true,
     keys = {
       cycle = "<C-n>",

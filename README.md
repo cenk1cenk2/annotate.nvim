@@ -235,9 +235,9 @@ require("annotate").setup({
       return (" %s/%s cycle  %s submit  %s cancel "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.cancel)
     end,
     footer_pos = "center",
-    -- filetype of the input buffer; markdown so markdown highlighting and plugins apply.
+    -- filetype of the input buffer; registered as a treesitter alias of markdown.
     -- The buffer also carries `vim.b.annotate = true` and `vim.b.annotate_origin` (the annotated buffer)
-    filetype = "markdown",
+    filetype = "annotate",
     -- markdown treesitter highlighting in the input buffer
     markdown = true,
     keys = {
@@ -461,6 +461,23 @@ require("annotate").setup({
     end,
   },
 })
+```
+
+## Completion
+
+The input buffer uses the `annotate` filetype, registered as a treesitter alias of markdown, and remembers the buffer it was opened from in `vim.b.annotate_origin`.
+
+For [blink.cmp](https://github.com/Saghen/blink.cmp), `annotate.blink` completes symbol names from that buffer's language servers (`workspace/symbol`) and inserts them as inline code:
+
+```lua
+sources = {
+  per_filetype = {
+    annotate = { inherit_defaults = true, "annotate" },
+  },
+  providers = {
+    annotate = { name = "annotate", module = "annotate.blink" },
+  },
+},
 ```
 
 ## Commands
