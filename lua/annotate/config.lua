@@ -253,8 +253,8 @@ local defaults = {
     label = function(t)
       return ("[%s]"):format(t.name:upper())
     end,
-    heading = function(annotation, t, location)
-      return annotation.file and ("### [%s] `%s`"):format(t.name:upper(), location) or ("### [%s] %s"):format(t.name:upper(), location)
+    heading = function(annotation, _, location)
+      return annotation.file and ("### `%s`"):format(location) or ("### %s"):format(location)
     end,
     format = nil,
   },

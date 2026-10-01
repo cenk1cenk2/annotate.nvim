@@ -318,8 +318,8 @@ require("annotate").setup({
       return ("[%s]"):format(t.name:upper())
     end,
     -- fun(annotation, type, location): string, the heading above each note
-    heading = function(annotation, t, location)
-      return annotation.file and ("### [%s] `%s`"):format(t.name:upper(), location) or ("### [%s] %s"):format(t.name:upper(), location)
+    heading = function(annotation, _, location)
+      return annotation.file and ("### `%s`"):format(location) or ("### %s"):format(location)
     end,
     -- fun(annotations, opts, config): markdown, replaces the built-in document when set
     format = nil,
@@ -427,7 +427,7 @@ A file is written to `export.dir`, named by `export.filename`, which defaults to
 
 `require("annotate").preview(opts)` shows the same markdown in a floating window without delivering it.
 
-The document has the following shape. Only types with at least one note appear, in the configured order. `Compared` only appears when a note was taken inside a diff view. Each note is a `###` heading carrying its type and location, followed by its text as free-flowing markdown. Repository notes come first in their section, then file notes sorted by file and line. Notes on a revision are marked with `~` and `@ <rev>`, whole-file notes only show the path.
+The document has the following shape. Only types with at least one note appear, in the configured order. `Compared` only appears when a note was taken inside a diff view. Each note is a `###` heading carrying its location, followed by its text as free-flowing markdown. Repository notes come first in their section, then file notes sorted by file and line. Notes on a revision are marked with `~` and `@ <rev>`, whole-file notes only show the path.
 
 ```markdown
 <export.prompt>
@@ -443,11 +443,11 @@ The document has the following shape. Only types with at least one note appear, 
 
 ## [GENERAL]
 
-### [GENERAL] repository
+### repository
 
 Applies to the repository as a whole.
 
-### [GENERAL] `lua/a.lua`
+### `lua/a.lua`
 
 Applies to the whole file.
 
@@ -455,14 +455,14 @@ Applies to the whole file.
 
 ## [BUG]
 
-### [BUG] `lua/a.lua:12-18`
+### `lua/a.lua:12-18`
 
 A range, with the note written as markdown:
 
 - a list
 - `inline code`
 
-### [BUG] `lua/b.lua:~7 @ a1b2c3d4e5f`
+### `lua/b.lua:~7 @ a1b2c3d4e5f`
 
 On a commit.
 ```
