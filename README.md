@@ -4,7 +4,7 @@ Leave typed notes on lines, ranges and whole files of a git repository, on ordin
 
 ## Features
 
-- One store per repository, kept under `stdpath("data")/annotate`, archived instead of deleted when cleared.
+- One store per repository, kept under `stdpath("data")/annotate`, archived instead of deleted when cleared, with archives pruned after `archive_days` (30 by default).
 - Typed notes, where every type carries the instruction the agent receives for it.
 - Notes follow their lines while you edit; the new positions are written back on save.
 - Source based system, where each source decides which buffers it can annotate and how a line maps to a repository location. Ordinary files and [diffview](https://github.com/dlyongemallo/diffview-plus.nvim) buffers are supported out of the box.
@@ -167,6 +167,7 @@ require("annotate").setup({
   },
   -- tried in order, the first source that matches a buffer wins
   sources = { "diffview", "repo" },
+  archive_days = 30,
   input = {
     width = 80,
     height = 10,

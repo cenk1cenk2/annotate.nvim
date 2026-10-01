@@ -14,8 +14,6 @@ local M = {
 local log = require("annotate.log")
 local git = require("annotate.git")
 
-local ARCHIVE_EXPIRY = 30 * 24 * 60 * 60
-
 ---@return string
 function M.dir()
   return vim.fs.joinpath(vim.fn.stdpath("data"), "annotate")
@@ -184,13 +182,13 @@ function M.archive()
   return target
 end
 
---- Removes archives older than 30 days.
+--- Removes archives older than `archive_days`.
 function M.prune()
   local now = os.time()
 
   for _, path in ipairs(vim.fn.glob(vim.fs.joinpath(M.archive_dir(), "*.json"), false, true)) do
     local stat = vim.uv.fs_stat(path)
-    if stat and now - stat.mtime.sec > ARCHIVE_EXPIRY then
+    if stat and now - stat.mtime.sec > require("annotate.config").options.archive_days * 24 * 60 * 60 then
       os.remove(path)
       log.debug(("archive pruned: path=%s"):format(path))
     end

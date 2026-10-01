@@ -29,6 +29,7 @@ local M = {}
 ---@field log_level? number
 ---@field types? annotate.Type[]
 ---@field sources? (string|annotate.Source)[]
+---@field archive_days? number
 ---@field input? annotate.InputConfig
 ---@field export? annotate.ExportConfig
 
@@ -80,6 +81,7 @@ local defaults = {
     },
   },
   sources = { "diffview", "repo" },
+  archive_days = 30,
   input = {
     width = 80,
     height = 10,
