@@ -212,14 +212,19 @@ require("annotate").setup({
     border = "rounded",
     -- snacks.nvim window position
     position = "float",
-    -- string or fun(type, keys), re-evaluated when cycling types
-    title = function(t)
-      return (" %s %s "):format(t.icon, t.name)
+    -- string or fun(type, keys, types, index), re-evaluated when cycling types
+    title = function(_, _, types, index)
+      local names = {}
+      for i, t in ipairs(types) do
+        table.insert(names, i == index and ("[%s %s]"):format(t.icon, t.name) or ("%s %s"):format(t.icon, t.name))
+      end
+
+      return (" %s "):format(table.concat(names, " · "))
     end,
     title_pos = "center",
-    -- string or fun(type, keys), evaluated when the window opens
+    -- string or fun(type, keys, types, index), evaluated when the window opens
     footer = function(_, keys)
-      return (" %s cycle  %s submit  %s cancel "):format(keys.cycle, keys.submit, keys.cancel)
+      return (" %s/%s cycle  %s submit  %s cancel "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.cancel)
     end,
     footer_pos = "center",
     -- filetype of the input buffer
@@ -228,6 +233,7 @@ require("annotate").setup({
     markdown = true,
     keys = {
       cycle = "<C-n>",
+      cycle_prev = "<C-p>",
       submit = "<C-s>",
       cancel = "q",
     },
@@ -298,9 +304,10 @@ require("annotate").setup({
 
 ### Input
 
-The input is a floating snacks.nvim window with markdown highlighting. The title shows the current type, the footer shows the keys.
+The input is a floating snacks.nvim window with markdown highlighting. The title lists every type with the current one in brackets, the footer shows the keys.
 
 - `cycle` advances through the types in the configured order, in insert and normal mode.
+- `cycle_prev` goes back through the types, in insert and normal mode.
 - `submit` saves the note, in insert and normal mode. An empty note is discarded.
 - `cancel` closes the window without saving, in normal mode.
 

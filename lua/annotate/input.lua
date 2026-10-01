@@ -42,7 +42,7 @@ function M.open(opts, callback)
   index = index or 1
 
   local function title()
-    return config.resolve(cfg.title, types[index], cfg.keys)
+    return config.resolve(cfg.title, types[index], cfg.keys, types, index)
   end
 
   local result = {}
@@ -54,7 +54,7 @@ function M.open(opts, callback)
     border = cfg.border,
     title = title(),
     title_pos = cfg.title_pos,
-    footer = config.resolve(cfg.footer, types[index], cfg.keys),
+    footer = config.resolve(cfg.footer, types[index], cfg.keys, types, index),
     footer_pos = cfg.footer_pos,
     enter = true,
     text = opts.text,
@@ -74,6 +74,15 @@ function M.open(opts, callback)
         end,
         mode = { "i", "n" },
         desc = "Cycle annotation type",
+      },
+      [cfg.keys.cycle_prev] = {
+        cfg.keys.cycle_prev,
+        function(self)
+          index = (index - 2) % #types + 1
+          self:set_title(title(), cfg.title_pos)
+        end,
+        mode = { "i", "n" },
+        desc = "Cycle annotation type backwards",
       },
       [cfg.keys.submit] = {
         cfg.keys.submit,

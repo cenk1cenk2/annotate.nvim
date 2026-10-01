@@ -9,10 +9,11 @@ local M = {}
 
 ---@class annotate.InputKeys
 ---@field cycle string
+---@field cycle_prev string
 ---@field submit string
 ---@field cancel string
 
----@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys): string
+---@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys, types: annotate.Type[], index: integer): string
 
 ---@class annotate.InputConfig
 ---@field width number
@@ -176,18 +177,24 @@ local defaults = {
     height = 10,
     border = "rounded",
     position = "float",
-    title = function(t)
-      return (" %s %s "):format(t.icon, t.name)
+    title = function(_, _, types, index)
+      local names = {}
+      for i, t in ipairs(types) do
+        table.insert(names, i == index and ("[%s %s]"):format(t.icon, t.name) or ("%s %s"):format(t.icon, t.name))
+      end
+
+      return (" %s "):format(table.concat(names, " · "))
     end,
     title_pos = "center",
     footer = function(_, keys)
-      return (" %s cycle  %s submit  %s cancel "):format(keys.cycle, keys.submit, keys.cancel)
+      return (" %s/%s cycle  %s submit  %s cancel "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.cancel)
     end,
     footer_pos = "center",
     filetype = "annotate",
     markdown = true,
     keys = {
       cycle = "<C-n>",
+      cycle_prev = "<C-p>",
       submit = "<C-s>",
       cancel = "q",
     },
