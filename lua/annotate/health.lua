@@ -36,8 +36,8 @@ function M.check()
     health.error("git is not available")
   end
 
-  local publish = require("annotate.config").options.publish
-  for _, cli in ipairs({ publish.gitlab_cli, publish.github_cli }) do
+  local external = require("annotate.config").options.external
+  for _, cli in ipairs({ external.gitlab_cli, external.github_cli }) do
     if vim.fn.executable(cli) == 1 then
       health.ok(("%s is available for publishing"):format(cli))
     else

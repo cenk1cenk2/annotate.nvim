@@ -12,7 +12,7 @@ local store = require("annotate.store")
 ---@param annotation annotate.Annotation
 ---@return annotate.Type
 function M.type(annotation)
-  return config.type(annotation.type) or { key = annotation.type, name = annotation.type, icon = "?", hl = "Comment", prompt = "" }
+  return config.type(annotation.type) or { key = annotation.type, name = annotation.type, icon = "?", hl = "Comment", export = { prompt = "" }, external = { prompt = "" } }
 end
 
 ---@param t annotate.Type

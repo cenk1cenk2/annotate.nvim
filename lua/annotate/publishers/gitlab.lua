@@ -27,7 +27,7 @@ function M.api(remote, endpoint, opts)
   opts = opts or {}
 
   local cmd = {
-    require("annotate.config").options.publish.gitlab_cli,
+    require("annotate.config").options.external.gitlab_cli,
     "api",
     "--hostname",
     remote.host,

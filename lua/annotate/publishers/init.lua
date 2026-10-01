@@ -40,6 +40,7 @@
 ---@field old_path? string
 ---@field in_diff? boolean the file is part of the diff
 ---@field fallback? boolean a line note that could not be positioned in the diff
+---@field legend? boolean the legend of the types rather than a note
 ---@field rewrite? boolean the type prefills the selection, its fenced block becomes a suggestion in the diff
 ---@field side? "new"|"old"
 ---@field line? integer first line on `side`
@@ -80,10 +81,11 @@
 ---@field submit fun(target: annotate.Target, verdict: string, note?: string): table<string, string>? publishes every draft with the verdict, returning comment urls by draft id
 
 ---@class annotate.PublishOptions
----@field publish? boolean submit the review instead of staging it, defaults to `publish.submit`
+---@field publish? boolean submit the review instead of staging it, defaults to `external.submit`
 ---@field verdict? "comment"|"approve"|"request_changes" skips the verdict question when submitting
 ---@field note? string skips the summary note question when submitting, empty for none
 ---@field force? boolean skips the summary
+---@field legend? boolean label each comment with its type and post the legend of the types, defaults to `external.legend`
 ---@field clear? boolean archive the store after everything was posted
 ---@field types? string[] subset of type keys to publish
 ---@field remote? string remote to publish to instead of the branch upstream
@@ -97,6 +99,8 @@ local M = {
   ---format is repository root: remote chosen for a branch without an upstream
   ---@type table<string, string>
   remotes = {},
+  ---id of the synthetic annotation carrying the legend through a publish
+  LEGEND = "legend",
 }
 
 local config = require("annotate.config")
@@ -131,11 +135,11 @@ function M.list()
   end, config.options.publishers)
 end
 
---- The `publish.platform` publisher, otherwise the first configured one matching the remote url.
+--- The `external.platform` publisher, otherwise the first configured one matching the remote url.
 ---@param url string
 ---@return annotate.Publisher?
 function M.find(url)
-  local platform = config.options.publish.platform
+  local platform = config.options.external.platform
   for _, publisher in ipairs(M.list()) do
     if platform and publisher.name == platform or not platform and publisher.match(url) then
       return publisher
@@ -237,8 +241,9 @@ end
 --- Maps annotations onto the diff of a target.
 ---@param annotations annotate.Annotation[]
 ---@param target annotate.Target
+---@param legend? boolean label the bodies with their type
 ---@return annotate.PublishItem[]
-function M.plan(annotations, target)
+function M.plan(annotations, target, legend)
   local export = require("annotate.export")
 
   local function names(sha, rev)
@@ -246,11 +251,13 @@ function M.plan(annotations, target)
   end
 
   return vim.tbl_map(function(annotation)
-    local t = config.type(annotation.type) or { key = annotation.type, name = annotation.type, prompt = "" }
+    local t = require("annotate.marks").type(annotation)
     local location = export.location(annotation)
-    local item = { annotation = annotation, location = location, body = config.options.publish.body(annotation, t, location), rewrite = t.prefill == "selection" }
+    local item = { annotation = annotation, location = location, body = config.options.external.body(annotation, t, location, legend == true), rewrite = t.prefill == "selection" }
 
-    if not annotation.file then
+    if annotation.id == M.LEGEND then
+      return vim.tbl_extend("force", item, { kind = "repository", body = annotation.text, legend = true, rewrite = false })
+    elseif not annotation.file then
       return vim.tbl_extend("force", item, { kind = "repository" })
     end
 
@@ -476,6 +483,33 @@ function M.posted(annotation, platform, target)
   end
 end
 
+--- Synthetic annotation carrying the legend of the types used by the annotations, recorded in the store under `legend`.
+---@param annotations annotate.Annotation[]
+---@return annotate.Annotation
+function M.legend(annotations)
+  local cfg = config.options.external
+  local lines = { cfg.legend_prompt, "" }
+  for _, section in ipairs(require("annotate.export").sections(annotations)) do
+    local t = section.type
+    table.insert(lines, t.external.prompt ~= "" and ("- **[%s]**: %s"):format(t.name:upper(), t.external.prompt) or ("- **[%s]**"):format(t.name:upper()))
+  end
+
+  return { id = M.LEGEND, type = M.LEGEND, line = 0, created_at = 0, text = table.concat(lines, "\n"), posted = store.legend.posted }
+end
+
+--- Replaces where an annotation, or the legend, was posted.
+---@param annotation annotate.Annotation
+---@param posted annotate.Posted[]
+local function record(annotation, posted)
+  if annotation.id == M.LEGEND then
+    store.legend.posted = #posted > 0 and posted or nil
+    annotation.posted = store.legend.posted
+    store.save()
+  else
+    store.update(annotation.id, { posted = #posted > 0 and posted or vim.NIL })
+  end
+end
+
 --- One line describing where an annotation was posted.
 ---@param entry annotate.Posted
 ---@return string
@@ -511,8 +545,9 @@ end
 ---@param items annotate.PublishItem[]
 ---@param skipped { annotation: annotate.Annotation, entry: annotate.Posted }[]
 ---@param submit boolean
+---@param legend boolean
 ---@return string[]
-function M.summary(publisher, target, items, skipped, submit)
+function M.summary(publisher, target, items, skipped, submit, legend)
   local export = require("annotate.export")
   local cfg = config.options.export
 
@@ -568,7 +603,19 @@ function M.summary(publisher, target, items, skipped, submit)
     "",
     ("- To post: %d%s"):format(#items, #totals > 0 and (" (%s)"):format(table.concat(totals, ", ")) or ""),
     ("- Skipped: %d (already draft or published)"):format(#skipped),
+    ("- Legend: %s"):format(legend and "on, comments are labelled with their type" or "off"),
   })
+
+  local note = vim.iter(vim.tbl_keys(rows)):find(function(annotation)
+    return annotation.id == M.LEGEND
+  end)
+  if note then
+    vim.list_extend(lines, { "", "## Legend", "" })
+    for _, row in ipairs(rows[note]) do
+      vim.list_extend(lines, vim.split(row, "\n", { plain = true }))
+    end
+    rows[note] = nil
+  end
 
   for index, section in ipairs(export.sections(vim.tbl_keys(rows))) do
     if index > 1 then
@@ -602,7 +649,7 @@ function M.confirm(title, lines, callback)
   local cfg = config.options
   local proceed = false
   local keys = {}
-  for action, list in pairs(cfg.publish.summary_keys) do
+  for action, list in pairs(cfg.external.summary_keys) do
     for _, key in ipairs(list) do
       keys[key] = function(self)
         proceed = action == "proceed"
@@ -674,10 +721,14 @@ end
 ---@param opts? annotate.PublishOptions
 function M.publish(opts)
   opts = opts or {}
-  local cfg = config.options.publish
+  local cfg = config.options.external
   local submit = opts.publish
   if submit == nil then
     submit = cfg.submit
+  end
+  local legend = opts.legend
+  if legend == nil then
+    legend = cfg.legend
   end
 
   if not git.root() then
@@ -699,7 +750,7 @@ function M.publish(opts)
 
     local publisher = M.find(remote.url)
     if not publisher then
-      return notify(("No publisher matches remote %s: %s, set publish.platform for a self-hosted forge."):format(remote.name, remote.url), vim.log.levels.WARN)
+      return notify(("No publisher matches remote %s: %s, set external.platform for a self-hosted forge."):format(remote.name, remote.url), vim.log.levels.WARN)
     end
 
     local target = publisher.resolve(remote)
@@ -722,12 +773,12 @@ function M.publish(opts)
 
     local drafts = publisher.drafts(target)
     local pending, skipped = {}, {}
-    for _, annotation in ipairs(annotations) do
+    for _, annotation in ipairs(legend and #annotations > 0 and vim.list_extend({ M.legend(annotations) }, annotations) or annotations) do
       local entry, index = M.posted(annotation, publisher.name, target)
       if entry and entry.state == "draft" and not drafts[tostring(entry.id)] then
         local posted = vim.deepcopy(annotation.posted)
         table.remove(posted, index)
-        store.update(annotation.id, { posted = #posted > 0 and posted or vim.NIL })
+        record(annotation, posted)
         entry = nil
       end
 
@@ -742,14 +793,14 @@ function M.publish(opts)
       return notify(("Every annotation is already posted to %s %s, %s skipped."):format(target.reference, target.title, plural(#skipped, "note")))
     end
 
-    local items = M.plan(pending, target)
+    local items = M.plan(pending, target, legend)
     for _, item in ipairs(items) do
       item.destination, item.body = publisher.route(item)
     end
 
     if not opts.force and cfg.summary then
       local proceed = M.wait(function(callback)
-        M.confirm(submit and "Submit review" or "Stage drafts", M.summary(publisher, target, items, skipped, submit), callback)
+        M.confirm(submit and "Submit review" or "Stage drafts", M.summary(publisher, target, items, skipped, submit, legend), callback)
       end)
       if not proceed then
         return notify("Publishing was cancelled.", vim.log.levels.WARN)
@@ -769,8 +820,9 @@ function M.publish(opts)
     local posted = 0
     publisher.post(target, items, function(item, id, url)
       posted = posted + 1
-      store.update(item.annotation.id, {
-        posted = vim.list_extend(vim.deepcopy(item.annotation.posted or {}), {
+      record(
+        item.annotation,
+        vim.list_extend(vim.deepcopy(item.annotation.posted or {}), {
           {
             platform = publisher.name,
             remote_url = remote.url,
@@ -786,13 +838,13 @@ function M.publish(opts)
             state = "draft",
             at = os.time(),
           },
-        }),
-      })
+        })
+      )
     end)
 
     if submit then
       local urls = publisher.submit(target, verdict, note) or {}
-      for _, annotation in ipairs(store.all()) do
+      for _, annotation in ipairs(vim.list_extend({ store.legend }, store.all())) do
         local entry = M.posted(annotation, publisher.name, target)
         if entry and entry.state == "draft" then
           entry.state = "published"

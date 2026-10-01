@@ -32,7 +32,7 @@ end
 function M.api(remote, endpoint, opts)
   opts = opts or {}
 
-  local cmd = { require("annotate.config").options.publish.github_cli, "api", "--hostname", remote.host, endpoint }
+  local cmd = { require("annotate.config").options.external.github_cli, "api", "--hostname", remote.host, endpoint }
   if opts.method then
     vim.list_extend(cmd, { "--method", opts.method })
   end
@@ -73,7 +73,7 @@ function M.resolve(remote)
   local publishers = require("annotate.publishers")
 
   local pr = publishers.json({
-    require("annotate.config").options.publish.github_cli,
+    require("annotate.config").options.external.github_cli,
     "pr",
     "list",
     "--repo",
@@ -183,7 +183,7 @@ function M.post(target, items, record)
         end
       end
 
-      local result = publishers.json({ require("annotate.config").options.publish.github_cli, "api", "--hostname", target.remote.host, "graphql", "--input", "-" }, {
+      local result = publishers.json({ require("annotate.config").options.external.github_cli, "api", "--hostname", target.remote.host, "graphql", "--input", "-" }, {
         query = M.thread,
         variables = variables,
       })

@@ -52,7 +52,7 @@ function M.sections(annotations)
   local grouped = {}
   for _, annotation in ipairs(annotations) do
     if not config.type(annotation.type) and not grouped[annotation.type] then
-      table.insert(types, { key = annotation.type, name = annotation.type, prompt = "" })
+      table.insert(types, { key = annotation.type, name = annotation.type, export = { prompt = "" }, external = { prompt = "" } })
     end
 
     grouped[annotation.type] = grouped[annotation.type] or {}
@@ -89,7 +89,7 @@ function M.render(annotations, opts)
   local lines = { opts.prompt or cfg.prompt, "", ("## %s"):format(cfg.headings.description), "" }
   for _, section in ipairs(sections) do
     local t = section.type
-    table.insert(lines, t.prompt ~= "" and ("- %s: %s"):format(cfg.label(t), t.prompt) or ("- %s"):format(cfg.label(t)))
+    table.insert(lines, t.export.prompt ~= "" and ("- %s: %s"):format(cfg.label(t), t.export.prompt) or ("- %s"):format(cfg.label(t)))
   end
 
   local compared = {}

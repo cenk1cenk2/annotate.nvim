@@ -151,14 +151,24 @@ require("annotate").setup({
       name = "Issue",
       icon = "",
       hl = "Special",
-      prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+      export = {
+        prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+      },
+      external = {
+        prompt = "Something here should change. The comment says what and roughly how; please apply it here and wherever the same pattern appears.",
+      },
     },
     {
       key = "rewrite",
       name = "Rewrite",
       icon = "",
       hl = "Function",
-      prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
+      export = {
+        prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
+      },
+      external = {
+        prompt = "The suggested replacement for these lines; apply it with the suggestion button or adapt it.",
+      },
       -- a new note starts with the annotated lines in a fenced block tagged with the filetype
       prefill = "selection",
     },
@@ -167,42 +177,72 @@ require("annotate").setup({
       name = "General",
       icon = "",
       hl = "DiagnosticInfo",
-      prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
+      export = {
+        prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
+      },
+      external = {
+        prompt = "A remark about the change as a whole rather than this line alone; it likely applies in other places too.",
+      },
     },
     {
       key = "suggestion",
       name = "Suggestion",
       icon = "",
       hl = "DiagnosticWarn",
-      prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
+      export = {
+        prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
+      },
+      external = {
+        prompt = "An idea worth considering, not a requirement; take it or say in the thread why not.",
+      },
     },
     {
       key = "question",
       name = "Question",
       icon = "",
       hl = "DiagnosticHint",
-      prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
+      export = {
+        prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
+      },
+      external = {
+        prompt = "A question for the author; please answer in the thread before this merges.",
+      },
     },
     {
       key = "bug",
       name = "Bug",
       icon = "",
       hl = "DiagnosticError",
-      prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+      export = {
+        prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+      },
+      external = {
+        prompt = "This is, or will cause, a bug, and the comment says how it shows up. Please fix the cause and cover it with a test where you can.",
+      },
     },
     {
       key = "context",
       name = "Context",
       icon = "",
       hl = "Comment",
-      prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+      export = {
+        prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+      },
+      external = {
+        prompt = "Background for the other comments; nothing to change for it by itself.",
+      },
     },
     {
       key = "praise",
       name = "Praise",
       icon = "",
       hl = "DiagnosticOk",
-      prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
+      export = {
+        prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
+      },
+      external = {
+        prompt = "Something done well; keep it and use it as the example for similar code.",
+      },
     },
   },
   -- key of the type a new note starts on, nil for the first entry of types
@@ -339,7 +379,8 @@ require("annotate").setup({
   },
   -- tried in order against the url of the remote, the first one that matches publishes
   publishers = { "gitlab", "github" },
-  publish = {
+  -- publishing to the forge, see Publishing
+  external = {
     -- submit the review instead of only staging it
     submit = false,
     -- name of the publisher to use regardless of the remote url, for self-hosted forges
@@ -352,15 +393,24 @@ require("annotate").setup({
       proceed = { "<CR>", "y" },
       cancel = { "q", "<Esc>", "n" },
     },
-    -- fun(annotation, type, location): string, the comment posted for a note
-    body = function(annotation, t)
-      return ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text)
+    -- label each comment with its type and post a legend of the types once per merge or pull request
+    legend = false,
+    -- first line of the legend, followed by each used type with its `external.prompt`
+    legend_prompt = "Each comment in this review is marked with its kind; here is what each kind asks of you.",
+    -- fun(annotation, type, location, legend): string, the comment posted for a note
+    body = function(annotation, t, _, legend)
+      return legend and ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text) or annotation.text
     end,
   },
 })
 ```
 
 `types` is a list, so setting it replaces the defaults as a whole.
+
+Each type describes itself twice, for two different readers:
+
+- `export.prompt` is written for the agent working through the export: what to do with notes of this kind. It fills the Description section of the export and shows in `show()` and the type chooser.
+- `external.prompt` is written for the people on the merge or pull request: the author and other reviewers. It is only used in the legend posted when publishing with `external.legend`.
 
 ### Input
 
@@ -530,10 +580,10 @@ require("annotate").setup({
 
 `require("annotate").publish(opts)` posts the notes of the repository to the open merge request (GitLab) or pull request (GitHub) of the current branch as review comments, the way a human review lands. Only the note text goes out, never the type prompts.
 
-It talks to the forge through `glab api` and `gh api` (`publish.gitlab_cli`, `publish.github_cli`), which must be authenticated for the host of the remote. Every call runs in the background; progress, the outcome and the CLI's stderr on failure arrive as notifications.
+It talks to the forge through `glab api` and `gh api` (`external.gitlab_cli`, `external.github_cli`), which must be authenticated for the host of the remote. Every call runs in the background; progress, the outcome and the CLI's stderr on failure arrive as notifications.
 
 - The remote is `opts.remote`, otherwise the upstream remote of the current branch. Without an upstream the only remote is used, and with several the choice is asked once per repository and session.
-- The publisher is the first of `publishers` whose `match` accepts the remote url: `github.com` goes to GitHub, a host containing `gitlab` to GitLab. `publish.platform` names the publisher for other hosts.
+- The publisher is the first of `publishers` whose `match` accepts the remote url: `github.com` goes to GitHub, a host containing `gitlab` to GitLab. `external.platform` names the publisher for other hosts.
 - The merge or pull request is the open one whose source branch is the upstream branch.
 - Publishing refuses when the local `HEAD` is not the head of the merge or pull request, since lines may not match its diff.
 
@@ -548,16 +598,16 @@ A note is inside the diff when every line of it falls into one hunk of the file'
 | Whole file | General draft note naming the file | File comment, or the review body when the file is not in the diff |
 | Repository | General draft note | Review body |
 
-Each comment is `**[<TYPE>]**`, a blank line and the note, changed through `publish.body`.
+Each comment is the note's markdown as it is, without its type, since reviewers on the forge do not know what the types mean. With `external.legend = true`, or `publish({ legend = true })` for one call, each comment starts with `**[<TYPE>]**` and a blank line, and a legend is posted once per merge or pull request: `external.legend_prompt` followed by every type in use with its `external.prompt`. GitLab receives it as a general note, GitHub in the review body; it is recorded in the store like a note, so it is not posted twice. `external.body` changes the comment.
 
 A note of a `prefill = "selection"` type, like `rewrite`, positioned on the new side of the diff turns its first fenced block into the forge's suggestion, which the author applies with one click: ` ```suggestion ` spanning the annotated lines on GitHub, ` ```suggestion:-0+N ` from the first annotated line on GitLab. Text around the block stays as it is. Suggestions only work in the diff, so a rewrite outside it keeps its plain block and the summary counts it.
 
 ### Staging and Submitting
 
-Before anything is posted, a float shows the plan in the shape of the export: the target with its branches, URL and head, the totals, then every note with its destination, whether it is new or skipped, and the exact body that is sent. `<CR>` or `y` proceeds, `q`, `<Esc>` or `n` cancels (`publish.summary_keys`). `opts.force` or `publish.summary = false` skips it.
+Before anything is posted, a float shows the plan in the shape of the export: the target with its branches, URL and head, the totals, whether the legend is on and its text, then every note with its destination, whether it is new or skipped, and the exact body that is sent. `<CR>` or `y` proceeds, `q`, `<Esc>` or `n` cancels (`external.summary_keys`). `opts.force` or `external.summary = false` skips it.
 
 - Staging, the default, leaves everything as drafts only you can see: GitLab draft notes, or a pending GitHub review. Nothing reaches the author.
-- Submitting (`opts.publish = true`, `publish.submit`, or `:Annotate publish!`) asks for the verdict and an optional summary note, then publishes every draft at once, including the ones staged earlier. GitLab offers Comment and Approve: the drafts are published together, the note is posted as a comment, and Approve approves the merge request at its head. GitHub offers Comment, Approve and Request changes: the pending review receives the new comments and is submitted with the verdict and the note as its body. `opts.verdict` and `opts.note` answer up front, cancelling the verdict cancels the submit.
+- Submitting (`opts.publish = true`, `external.submit`, or `:Annotate publish!`) asks for the verdict and an optional summary note, then publishes every draft at once, including the ones staged earlier. GitLab offers Comment and Approve: the drafts are published together, the note is posted as a comment, and Approve approves the merge request at its head. GitHub offers Comment, Approve and Request changes: the pending review receives the new comments and is submitted with the verdict and the note as its body. `opts.verdict` and `opts.note` answer up front, cancelling the verdict cancels the submit.
 
 ### Duplicates
 

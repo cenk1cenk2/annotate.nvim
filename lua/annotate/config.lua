@@ -1,11 +1,15 @@
 local M = {}
 
+---@class annotate.TypeText
+---@field prompt string
+
 ---@class annotate.Type
 ---@field key string
 ---@field name string
 ---@field icon string
 ---@field hl string
----@field prompt string
+---@field export annotate.TypeText what the agent reading the export is told about the type
+---@field external annotate.TypeText what reviewers on the forge are told about the type in the legend
 ---@field prefill? "selection" start a new note with the annotated lines in a fenced block
 
 ---@class annotate.InputKeys
@@ -94,18 +98,20 @@ local M = {}
 ---@field heading fun(annotation: annotate.Annotation, type: annotate.Type, location: string): string
 ---@field format? fun(annotations: annotate.Annotation[], opts: annotate.ExportOptions, config: annotate.Config): string
 
----@class annotate.PublishSummaryKeys
+---@class annotate.ExternalSummaryKeys
 ---@field proceed string[]
 ---@field cancel string[]
 
----@class annotate.PublishConfig
+---@class annotate.ExternalConfig
 ---@field submit boolean
 ---@field platform? string
 ---@field gitlab_cli string
 ---@field github_cli string
 ---@field summary boolean
----@field summary_keys annotate.PublishSummaryKeys
----@field body fun(annotation: annotate.Annotation, type: annotate.Type, location: string): string
+---@field summary_keys annotate.ExternalSummaryKeys
+---@field legend boolean
+---@field legend_prompt string
+---@field body fun(annotation: annotate.Annotation, type: annotate.Type, location: string, legend: boolean): string
 
 ---@class annotate.Config
 ---@field log_level? number
@@ -123,7 +129,7 @@ local M = {}
 ---@field notify? annotate.NotifyConfig
 ---@field export? annotate.ExportConfig
 ---@field publishers? (string|annotate.Publisher)[]
----@field publish? annotate.PublishConfig
+---@field external? annotate.ExternalConfig
 
 ---@type annotate.Config
 local defaults = {
@@ -134,14 +140,24 @@ local defaults = {
       name = "Issue",
       icon = "",
       hl = "Special",
-      prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+      export = {
+        prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+      },
+      external = {
+        prompt = "Something here should change. The comment says what and roughly how; please apply it here and wherever the same pattern appears.",
+      },
     },
     {
       key = "rewrite",
       name = "Rewrite",
       icon = "",
       hl = "Function",
-      prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
+      export = {
+        prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
+      },
+      external = {
+        prompt = "The suggested replacement for these lines; apply it with the suggestion button or adapt it.",
+      },
       prefill = "selection",
     },
     {
@@ -149,42 +165,72 @@ local defaults = {
       name = "General",
       icon = "",
       hl = "DiagnosticInfo",
-      prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
+      export = {
+        prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
+      },
+      external = {
+        prompt = "A remark about the change as a whole rather than this line alone; it likely applies in other places too.",
+      },
     },
     {
       key = "suggestion",
       name = "Suggestion",
       icon = "",
       hl = "DiagnosticWarn",
-      prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
+      export = {
+        prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
+      },
+      external = {
+        prompt = "An idea worth considering, not a requirement; take it or say in the thread why not.",
+      },
     },
     {
       key = "question",
       name = "Question",
       icon = "",
       hl = "DiagnosticHint",
-      prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
+      export = {
+        prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
+      },
+      external = {
+        prompt = "A question for the author; please answer in the thread before this merges.",
+      },
     },
     {
       key = "bug",
       name = "Bug",
       icon = "",
       hl = "DiagnosticError",
-      prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+      export = {
+        prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+      },
+      external = {
+        prompt = "This is, or will cause, a bug, and the comment says how it shows up. Please fix the cause and cover it with a test where you can.",
+      },
     },
     {
       key = "context",
       name = "Context",
       icon = "",
       hl = "Comment",
-      prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+      export = {
+        prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+      },
+      external = {
+        prompt = "Background for the other comments; nothing to change for it by itself.",
+      },
     },
     {
       key = "praise",
       name = "Praise",
       icon = "",
       hl = "DiagnosticOk",
-      prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
+      export = {
+        prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
+      },
+      external = {
+        prompt = "Something done well; keep it and use it as the example for similar code.",
+      },
     },
   },
   default_type = nil,
@@ -287,7 +333,7 @@ local defaults = {
     format = nil,
   },
   publishers = { "gitlab", "github" },
-  publish = {
+  external = {
     submit = false,
     platform = nil,
     gitlab_cli = "glab",
@@ -297,8 +343,10 @@ local defaults = {
       proceed = { "<CR>", "y" },
       cancel = { "q", "<Esc>", "n" },
     },
-    body = function(annotation, t)
-      return ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text)
+    legend = false,
+    legend_prompt = "Each comment in this review is marked with its kind; here is what each kind asks of you.",
+    body = function(annotation, t, _, legend)
+      return legend and ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text) or annotation.text
     end,
   },
 }

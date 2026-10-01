@@ -204,7 +204,7 @@ local T = MiniTest.new_set({
   hooks = {
     pre_case = function()
       calls, messages = {}, {}
-      config.setup({ publish = { summary = false } })
+      config.setup({ external = { summary = false } })
       H.repo({ ["a.lua"] = { "one" } })
       vim.notify = function(message)
         table.insert(messages, message)
@@ -299,7 +299,7 @@ T["plan positions lines inside the diff and falls back outside it"] = function()
       { "repository", false, false, false, false, false },
     }
   )
-  eq(plan[1].body, "**[BUG]**\n\nbroken")
+  eq(plan[1].body, "broken")
 end
 
 T["routes and bodies per platform"] = function()
@@ -318,18 +318,18 @@ T["routes and bodies per platform"] = function()
   end
 
   eq(route(publishers.registry.gitlab), {
-    { "inline", "**[BUG]**\n\nbroken" },
-    { "general", "`a.lua:10`\n\n**[BUG]**\n\nbroken" },
-    { "general", "`a.lua`\n\n**[BUG]**\n\nbroken" },
-    { "general", "`b.lua:1`\n\n**[BUG]**\n\nbroken" },
-    { "general", "**[BUG]**\n\nbroken" },
+    { "inline", "broken" },
+    { "general", "`a.lua:10`\n\nbroken" },
+    { "general", "`a.lua`\n\nbroken" },
+    { "general", "`b.lua:1`\n\nbroken" },
+    { "general", "broken" },
   })
   eq(route(publishers.registry.github), {
-    { "inline", "**[BUG]**\n\nbroken" },
-    { "file", "`a.lua:10`\n\n**[BUG]**\n\nbroken" },
-    { "file", "**[BUG]**\n\nbroken" },
-    { "body", "`b.lua:1`\n\n**[BUG]**\n\nbroken" },
-    { "body", "**[BUG]**\n\nbroken" },
+    { "inline", "broken" },
+    { "file", "`a.lua:10`\n\nbroken" },
+    { "file", "broken" },
+    { "body", "`b.lua:1`\n\nbroken" },
+    { "body", "broken" },
   })
 end
 
@@ -349,23 +349,23 @@ T["rewrites in the diff become suggestions covering their lines"] = function()
   end
 
   eq(route(publishers.registry.github), {
-    { "suggestion", "**[REWRITE]**\n\n```suggestion\nX\nY\n```\nshorter" },
-    { "suggestion", "**[REWRITE]**\n\n```suggestion\nX\nY\n```\nshorter" },
-    { "file", "`a.lua:10`\n\n**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
-    { "inline", "**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
+    { "suggestion", "```suggestion\nX\nY\n```\nshorter" },
+    { "suggestion", "```suggestion\nX\nY\n```\nshorter" },
+    { "file", "`a.lua:10`\n\n```lua\nX\nY\n```\nshorter" },
+    { "inline", "```lua\nX\nY\n```\nshorter" },
   })
   eq(route(publishers.registry.gitlab), {
-    { "suggestion", "**[REWRITE]**\n\n```suggestion:-0+1\nX\nY\n```\nshorter" },
-    { "suggestion", "**[REWRITE]**\n\n```suggestion:-0+0\nX\nY\n```\nshorter" },
-    { "general", "`a.lua:10`\n\n**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
-    { "inline", "**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
+    { "suggestion", "```suggestion:-0+1\nX\nY\n```\nshorter" },
+    { "suggestion", "```suggestion:-0+0\nX\nY\n```\nshorter" },
+    { "general", "`a.lua:10`\n\n```lua\nX\nY\n```\nshorter" },
+    { "inline", "```lua\nX\nY\n```\nshorter" },
   })
 end
 
 T["a rewrite outside the diff posts a plain block and is counted"] = function()
   remote("git@github.com:owner/repo.git")
   stub(github())
-  config.setup({ publish = { summary = true } })
+  config.setup({ external = { summary = true } })
   add({ type = "rewrite", file = "a.lua", line = 2, line_end = 3, text = "```lua\nX\n```" })
   add({ type = "rewrite", file = "a.lua", line = 10, text = "```lua\nX\n```" })
   local prompts = {}
@@ -374,11 +374,94 @@ T["a rewrite outside the diff posts a plain block and is counted"] = function()
   publishers.publish()
 
   local threads = requests("GET", "^graphql$")
-  eq({ threads[1].body.variables.line, threads[1].body.variables.startLine, threads[1].body.variables.body }, { 3, 2, "**[REWRITE]**\n\n```suggestion\nX\n```" })
+  eq({ threads[1].body.variables.line, threads[1].body.variables.startLine, threads[1].body.variables.body }, { 3, 2, "```suggestion\nX\n```" })
   eq(threads[2].body.variables.subjectType, "FILE")
   eq(prompts[1]:find("- To post: 2 (1 suggestion, 1 outside the diff, 1 rewrite without a suggestion)", 1, true) ~= nil, true)
   eq(prompts[1]:find("- Destination: suggestion", 1, true) ~= nil, true)
   eq(messages[#messages], "#7 Add the thing: 2 staged, 0 skipped as already posted, 1 fell back to general comments, 1 rewrite without a suggestion.")
+end
+
+T["bodies carry no type label unless the legend is on"] = function()
+  stub(gitlab())
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish()
+
+  eq(
+    vim.tbl_map(function(call)
+      return call.body.note
+    end, requests("POST", "draft_notes$")),
+    { "broken" }
+  )
+end
+
+T["the legend labels the bodies and lists the external prompts of the used types once per target"] = function()
+  local forge = gitlab()
+  stub(forge)
+  add({ file = "a.lua", line = 2 })
+  add({ file = "a.lua", line = 4, type = "question", text = "why?" })
+  local legend = table.concat({
+    config.options.external.legend_prompt,
+    "",
+    "- **[QUESTION]**: " .. config.type("question").external.prompt,
+    "- **[BUG]**: " .. config.type("bug").external.prompt,
+  }, "\n")
+
+  publishers.publish({ legend = true })
+
+  eq(
+    vim.tbl_map(function(call)
+      return call.body.note
+    end, requests("POST", "draft_notes$")),
+    { legend, "**[BUG]**\n\nbroken", "**[QUESTION]**\n\nwhy?" }
+  )
+  eq(legend:find(config.type("bug").export.prompt, 1, true), nil)
+  store.load(true)
+  eq({ store.legend.posted[1].target, store.legend.posted[1].state, store.legend.posted[1].id }, { 5, "draft", 101 })
+
+  publishers.publish({ legend = true })
+
+  eq(#requests("POST", "draft_notes$"), 3)
+  eq(messages[#messages], "Every annotation is already posted to !5 Add the thing, 3 notes skipped.")
+end
+
+T["external.legend turns the legend on and GitHub puts it in the review body"] = function()
+  remote("git@github.com:owner/repo.git")
+  stub(github())
+  config.setup({ external = { summary = false, legend = true, legend_prompt = "KINDS" } })
+  add({ line = 0, text = "overall" })
+
+  publishers.publish()
+
+  eq(requests("POST", "/reviews$")[1].body.body, "KINDS\n\n- **[BUG]**: " .. config.type("bug").external.prompt .. "\n\n**[BUG]**\n\noverall")
+end
+
+T["the summary shows the legend and its text"] = function()
+  stub(gitlab())
+  config.setup({ external = { legend = true, legend_prompt = "KINDS" } })
+  add({ file = "a.lua", line = 2 })
+  local prompts = {}
+  answer({ "Cancel" }, prompts)
+
+  publishers.publish()
+
+  eq(prompts[1]:find(
+    table.concat({
+      "- Legend: on, comments are labelled with their type",
+      "",
+      "## Legend",
+      "",
+      "- Destination: general comment",
+      "- Status: new",
+      "",
+      "KINDS",
+      "",
+      "- **[BUG]**: " .. config.type("bug").external.prompt,
+    }, "\n"),
+    1,
+    true
+  ) ~= nil, true)
+  eq(prompts[1]:find("**[BUG]**\n\nbroken", 1, true) ~= nil, true)
 end
 
 T["refuses when HEAD is not the head of the merge request"] = function()
@@ -445,10 +528,10 @@ T["GitLab staging creates positioned and general drafts without publishing them"
   local drafts = requests("POST", "draft_notes$")
   eq(drafts[1].endpoint, "projects/group%2fsub%2fproject/merge_requests/5/draft_notes")
   eq(drafts[1].body, {
-    note = "**[BUG]**\n\nbroken",
+    note = "broken",
     position = { position_type = "text", base_sha = BASE, start_sha = START, head_sha = HEAD, new_path = "a.lua", old_path = "a.lua", new_line = 4, old_line = 3 },
   })
-  eq(drafts[2].body, { note = "`a.lua:10`\n\n**[BUG]**\n\nbroken" })
+  eq(drafts[2].body, { note = "`a.lua:10`\n\nbroken" })
   eq(#requests("POST", "bulk_publish"), 0)
 
   store.load(true)
@@ -594,10 +677,10 @@ T["GitHub staging creates a pending review with threads and no event"] = functio
 
   local reviews = requests("POST", "/reviews$")
   eq(#reviews, 1)
-  eq(reviews[1].body, { commit_id = HEAD, body = "**[BUG]**\n\noverall" })
+  eq(reviews[1].body, { commit_id = HEAD, body = "overall" })
   local threads = requests("GET", "^graphql$")
-  eq(threads[1].body.variables, { review = "R201", path = "a.lua", body = "**[BUG]**\n\nbroken", line = 3, side = "RIGHT", startLine = 2, startSide = "RIGHT" })
-  eq(threads[2].body.variables, { review = "R201", path = "a.lua", body = "**[BUG]**\n\nbroken", subjectType = "FILE" })
+  eq(threads[1].body.variables, { review = "R201", path = "a.lua", body = "broken", line = 3, side = "RIGHT", startLine = 2, startSide = "RIGHT" })
+  eq(threads[2].body.variables, { review = "R201", path = "a.lua", body = "broken", subjectType = "FILE" })
   eq(#requests("POST", "/events$"), 0)
   store.load(true)
   eq({ store.get(inline.id).posted[1].id, store.get(inline.id).posted[1].comment_url }, { 202, "https://github.com/c/202" })
@@ -636,7 +719,7 @@ end
 
 T["the summary lists the target, each destination and the totals"] = function()
   stub(gitlab())
-  config.setup({ publish = { summary = true } })
+  config.setup({ external = { summary = true } })
   add({ file = "a.lua", line = 4 })
   add({ file = "a.lua", line = 10, type = "question" })
   publishers.publish({ force = true })
@@ -667,6 +750,7 @@ T["the summary lists the target, each destination and the totals"] = function()
       "",
       "- To post: 1",
       "- Skipped: 2 (already draft or published)",
+      "- Legend: off",
       "",
       "## [QUESTION]",
       "",
@@ -674,8 +758,6 @@ T["the summary lists the target, each destination and the totals"] = function()
       "",
       "- Destination: general comment",
       "- Status: new",
-      "",
-      "**[QUESTION]**",
       "",
       "overall",
       "",
@@ -696,7 +778,7 @@ end
 
 T["proceeding with the summary posts exactly the planned bodies"] = function()
   stub(gitlab())
-  config.setup({ publish = { summary = true } })
+  config.setup({ external = { summary = true } })
   add({ file = "a.lua", line = 4 })
   add({ file = "b.lua", line = 1 })
   local prompts = {}

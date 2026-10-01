@@ -7,9 +7,9 @@ local T = MiniTest.new_set({
     pre_case = function()
       config.setup({
         types = {
-          { key = "a", name = "A", icon = "1", hl = "Comment", prompt = "" },
-          { key = "b", name = "B", icon = "2", hl = "Comment", prompt = "" },
-          { key = "c", name = "C", icon = "3", hl = "Comment", prompt = "" },
+          { key = "a", name = "A", icon = "1", hl = "Comment", export = { prompt = "" } },
+          { key = "b", name = "B", icon = "2", hl = "Comment", export = { prompt = "" } },
+          { key = "c", name = "C", icon = "3", hl = "Comment", export = { prompt = "" } },
         },
       })
     end,
@@ -97,7 +97,10 @@ end
 
 T["a prefill type opens with the selection and the cursor inside the block"] = function()
   config.setup({
-    types = { { key = "a", name = "A", icon = "1", hl = "Comment", prompt = "" }, { key = "r", name = "R", icon = "2", hl = "Comment", prompt = "", prefill = "selection" } },
+    types = {
+      { key = "a", name = "A", icon = "1", hl = "Comment", export = { prompt = "" } },
+      { key = "r", name = "R", icon = "2", hl = "Comment", export = { prompt = "" }, prefill = "selection" },
+    },
   })
   local fake = snacks()
   vim.api.nvim_set_current_buf(buffer({ "one", "two" }))
@@ -111,7 +114,10 @@ end
 
 T["cycling into a prefill type fills only an empty input"] = function()
   config.setup({
-    types = { { key = "a", name = "A", icon = "1", hl = "Comment", prompt = "" }, { key = "r", name = "R", icon = "2", hl = "Comment", prompt = "", prefill = "selection" } },
+    types = {
+      { key = "a", name = "A", icon = "1", hl = "Comment", export = { prompt = "" } },
+      { key = "r", name = "R", icon = "2", hl = "Comment", export = { prompt = "" }, prefill = "selection" },
+    },
   })
   local fake = snacks()
   vim.api.nvim_set_current_buf(buffer({ "one", "two" }))

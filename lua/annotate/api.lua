@@ -156,7 +156,7 @@ local function choose_type(callback)
   require("snacks").picker.pick({
     title = "Annotation type",
     items = vim.tbl_map(function(t)
-      return { text = ("%s %s"):format(t.icon, t.name), key = t.key, preview = { text = t.prompt } }
+      return { text = ("%s %s"):format(t.icon, t.name), key = t.key, preview = { text = t.export.prompt } }
     end, types),
     format = "text",
     preview = "preview",
@@ -315,8 +315,8 @@ function M.show()
     end
     vim.list_extend(lines, { ("## %s %s"):format(t.icon, t.name), "", ("`%s`"):format(require("annotate.export").location(annotation)), "" })
     vim.list_extend(lines, posted(annotation))
-    if t.prompt ~= "" then
-      vim.list_extend(lines, { ("_%s_"):format(t.prompt), "" })
+    if t.export.prompt ~= "" then
+      vim.list_extend(lines, { ("_%s_"):format(t.export.prompt), "" })
     end
     vim.list_extend(lines, vim.split(annotation.text, "\n", { plain = true }))
   end

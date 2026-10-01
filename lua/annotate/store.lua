@@ -10,6 +10,9 @@ local M = {
   root = nil,
   ---@type annotate.Annotation[]
   annotations = {},
+  ---where `publish` posted the type legend
+  ---@type { posted?: annotate.Posted[] }
+  legend = {},
 }
 
 local log = require("annotate.log")
@@ -39,9 +42,10 @@ function M.path()
   return vim.fs.joinpath(M.dir(), M.hash(root) .. ".json")
 end
 
+--- Decoded content of a store file, empty when it does not exist.
 ---@param path string
----@return annotate.Annotation[]
-function M.read(path)
+---@return { annotations?: annotate.Annotation[], legend?: { posted?: annotate.Posted[] } }
+function M.decode(path)
   local file = io.open(path, "r")
   if not file then
     return {}
@@ -54,7 +58,13 @@ function M.read(path)
     return {}
   end
 
-  return vim.json.decode(content, { luanil = { object = true, array = true } }).annotations or {}
+  return vim.json.decode(content, { luanil = { object = true, array = true } })
+end
+
+---@param path string
+---@return annotate.Annotation[]
+function M.read(path)
+  return M.decode(path).annotations or {}
 end
 
 --- Loads the annotations of the current repository, reading the file only when the repository changed.
@@ -69,7 +79,9 @@ function M.load(force)
   M.root = root
 
   local path = M.path()
-  M.annotations = M.read(path)
+  local content = M.decode(path)
+  M.annotations = content.annotations or {}
+  M.legend = content.legend or {}
 
   log.debug(("store loaded: path=%s #annotations=%d"):format(path, #M.annotations))
 
@@ -85,7 +97,7 @@ function M.save()
   vim.fn.mkdir(vim.fs.dirname(path), "p")
 
   local file = assert(io.open(path, "w"))
-  file:write(vim.json.encode({ root = M.root, annotations = M.annotations }))
+  file:write(vim.json.encode({ root = M.root, annotations = M.annotations, legend = next(M.legend) and M.legend or nil }))
   file:close()
 
   log.debug(("store saved: path=%s #annotations=%d"):format(path, #M.annotations))
@@ -178,6 +190,7 @@ function M.archive()
 
   local path = M.path()
   M.annotations = {}
+  M.legend = {}
 
   if not vim.uv.fs_stat(path) then
     return nil
@@ -200,8 +213,10 @@ end
 ---@param keep annotate.Annotation[]
 ---@return string? archived path, nil when nothing was stored
 function M.split(keep)
+  local legend = M.legend
   local archived = M.archive()
   M.annotations = vim.deepcopy(keep)
+  M.legend = legend
   M.save()
 
   return archived
