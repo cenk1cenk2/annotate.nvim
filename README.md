@@ -543,7 +543,7 @@ A note is inside the diff when every line of it falls into one hunk of the file'
 
 | Note | GitLab | GitHub |
 | --- | --- | --- |
-| Lines inside the diff | Draft note positioned on the first line (`new_line`, or `old_line` on the old side) | Review comment on the lines (`line`, `start_line`, `side` `RIGHT` or `LEFT`) |
+| Lines inside the diff | Draft note positioned on the lines (`new_line` or `old_line`, plus `line_range` with GitLab line codes for a range) | Review comment on the lines (`line`, `start_line`, `side` `RIGHT` or `LEFT`) |
 | Lines outside the diff | General draft note, prefixed with `` `path:line` `` | File comment, prefixed with `` `path:line` ``, or the review body when the file is not in the diff |
 | Whole file | General draft note naming the file | File comment, or the review body when the file is not in the diff |
 | Repository | General draft note | Review body |

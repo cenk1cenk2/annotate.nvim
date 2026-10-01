@@ -237,7 +237,11 @@ local target = {
 }
 
 T["parse_diff maps added, removed and context lines with their other side"] = function()
-  local lines = publishers.parse_diff(PATCH)
+  local lines = vim.tbl_map(function(side)
+    return vim.tbl_map(function(line)
+      return { hunk = line.hunk, old = line.old, new = line.new }
+    end, side)
+  end, publishers.parse_diff(PATCH))
 
   eq(lines.new, {
     [1] = { hunk = 1, old = 1 },
@@ -726,6 +730,35 @@ T["a failing CLI reports its stderr and records nothing"] = function()
   eq(messages[#messages]:find("403 Forbidden", 1, true) ~= nil, true)
   store.load(true)
   eq(store.get(annotation.id).posted, nil)
+end
+
+T["parse_diff records each line's position on both sides"] = function()
+  local lines = publishers.parse_diff(PATCH)
+
+  eq(lines.new[2], { hunk = 1, type = "new", old_pos = 3, new_pos = 2 })
+  eq(lines.new[4], { hunk = 1, old = 3, old_pos = 3, new_pos = 4 })
+  eq(lines.old[2], { hunk = 1, type = "old", old_pos = 2, new_pos = 2 })
+end
+
+T["GitLab ranges carry a line_range from the first to the last line"] = function()
+  stub(gitlab())
+  add({ file = "a.lua", line = 2, line_end = 4 })
+  add({ file = "a.lua", line = 4 })
+
+  publishers.publish()
+
+  local drafts = requests("POST", "draft_notes$")
+  local code = publishers.sha1("a.lua")
+  eq(drafts[1].body.position.line_range, {
+    start = { line_code = code .. "_3_2", type = "new", new_line = 2 },
+    ["end"] = { line_code = code .. "_3_4", old_line = 3, new_line = 4 },
+  })
+  eq(drafts[2].body.position.line_range, nil)
+end
+
+T["sha1 matches the reference digests"] = function()
+  eq(publishers.sha1(""), "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+  eq(publishers.sha1("abc"), "a9993e364706816aba3e25717850c26c9cd0d89d")
 end
 
 return T

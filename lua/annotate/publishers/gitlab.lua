@@ -95,6 +95,30 @@ function M.route(item)
   return "general", item.kind == "repository" and item.body or publishers.located(item)
 end
 
+--- GitLab's code for a diff line: the SHA-1 of the path, then the line's old and new position.
+---@param path string
+---@param line annotate.DiffLine
+---@return string
+function M.line_code(path, line)
+  return ("%s_%d_%d"):format(require("annotate.publishers").sha1(path), line.old_pos, line.new_pos)
+end
+
+--- `position.line_range` spanning a multi-line note, so the comment covers the whole range.
+---@param item annotate.PublishItem
+---@return table
+function M.line_range(item)
+  local function point(line)
+    return {
+      line_code = M.line_code(item.path, line),
+      type = line.type,
+      old_line = line.type ~= "new" and line.old_pos or nil,
+      new_line = line.type ~= "old" and line.new_pos or nil,
+    }
+  end
+
+  return { start = point(item.first), ["end"] = point(item.last) }
+end
+
 function M.post(target, items, record)
   for _, item in ipairs(items) do
     local body = { note = item.body }
@@ -108,6 +132,7 @@ function M.post(target, items, record)
         old_path = item.old_path,
         new_line = item.new_line,
         old_line = item.old_line,
+        line_range = item.line_end > item.line and M.line_range(item) or nil,
       }
     end
 

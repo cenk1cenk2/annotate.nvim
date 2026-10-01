@@ -158,6 +158,52 @@ function M.parse_remote(url)
   return host, (path:gsub("%.git/?$", ""):gsub("/$", ""))
 end
 
+--- Hex SHA-1 of a string.
+---@param text string
+---@return string
+function M.sha1(text)
+  local bit = require("bit")
+  local band, bor, bxor, bnot, rol, tohex = bit.band, bit.bor, bit.bxor, bit.bnot, bit.rol, bit.tohex
+  local h0, h1, h2, h3, h4 = 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0
+
+  local length = #text
+  text = text .. "\128" .. ("\0"):rep((55 - length) % 64)
+  local bits = length * 8
+  for i = 7, 0, -1 do
+    text = text .. string.char(math.floor(bits / 2 ^ (i * 8)) % 256)
+  end
+
+  for chunk = 1, #text, 64 do
+    local w = {}
+    for i = 0, 15 do
+      local a, b, c, d = text:byte(chunk + i * 4, chunk + i * 4 + 3)
+      w[i] = bor(bit.lshift(a, 24), bit.lshift(b, 16), bit.lshift(c, 8), d)
+    end
+    for i = 16, 79 do
+      w[i] = rol(bxor(w[i - 3], w[i - 8], w[i - 14], w[i - 16]), 1)
+    end
+
+    local a, b, c, d, e = h0, h1, h2, h3, h4
+    for i = 0, 79 do
+      local f, k
+      if i < 20 then
+        f, k = bor(band(b, c), band(bnot(b), d)), 0x5A827999
+      elseif i < 40 then
+        f, k = bxor(b, c, d), 0x6ED9EBA1
+      elseif i < 60 then
+        f, k = bor(band(b, c), band(b, d), band(c, d)), 0x8F1BBCDC
+      else
+        f, k = bxor(b, c, d), 0xCA62C1D6
+      end
+      a, b, c, d, e = bit.tobit(rol(a, 5) + f + e + k + w[i]), a, rol(b, 30), c, d
+    end
+
+    h0, h1, h2, h3, h4 = bit.tobit(h0 + a), bit.tobit(h1 + b), bit.tobit(h2 + c), bit.tobit(h3 + d), bit.tobit(h4 + e)
+  end
+
+  return tohex(h0) .. tohex(h1) .. tohex(h2) .. tohex(h3) .. tohex(h4)
+end
+
 --- Line maps of a unified diff, keyed by line number on each side, with the line on the other side for context lines.
 ---@param patch? string
 ---@return annotate.DiffLines
@@ -172,14 +218,14 @@ function M.parse_diff(patch)
     elseif hunk > 0 then
       local marker = line:sub(1, 1)
       if marker == "+" then
-        lines.new[new] = { hunk = hunk }
+        lines.new[new] = { hunk = hunk, type = "new", old_pos = old, new_pos = new }
         new = new + 1
       elseif marker == "-" then
-        lines.old[old] = { hunk = hunk }
+        lines.old[old] = { hunk = hunk, type = "old", old_pos = old, new_pos = new }
         old = old + 1
       elseif marker == " " then
-        lines.new[new] = { hunk = hunk, old = old }
-        lines.old[old] = { hunk = hunk, new = new }
+        lines.new[new] = { hunk = hunk, old = old, old_pos = old, new_pos = new }
+        lines.old[old] = { hunk = hunk, new = new, old_pos = old, new_pos = new }
         old, new = old + 1, new + 1
       end
     end
@@ -238,6 +284,8 @@ function M.plan(annotations, target)
       line_end = annotation.line_end or annotation.line,
       new_line = side == "new" and annotation.line or first.new,
       old_line = side == "old" and annotation.line or first.old,
+      first = first,
+      last = last,
     })
   end, annotations)
 end
