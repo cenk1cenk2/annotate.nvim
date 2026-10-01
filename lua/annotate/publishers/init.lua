@@ -40,12 +40,13 @@
 ---@field old_path? string
 ---@field in_diff? boolean the file is part of the diff
 ---@field fallback? boolean a line note that could not be positioned in the diff
+---@field rewrite? boolean the type prefills the selection, its fenced block becomes a suggestion in the diff
 ---@field side? "new"|"old"
 ---@field line? integer first line on `side`
 ---@field line_end? integer last line on `side`
 ---@field new_line? integer new side line of `line`
 ---@field old_line? integer old side line of `line`
----@field destination? "inline"|"file"|"general"|"body" set by the publisher's `route` along with the final `body`
+---@field destination? "inline"|"suggestion"|"file"|"general"|"body" set by the publisher's `route` along with the final `body`
 
 ---@class annotate.Posted
 ---@field platform string
@@ -75,7 +76,7 @@
 ---@field drafts fun(target: annotate.Target): table<string, true> ids of the drafts of the current user still pending on the target
 ---@field post fun(target: annotate.Target, items: annotate.PublishItem[], record: fun(item: annotate.PublishItem, id: integer|string, url?: string)) stages the items as drafts
 ---@field target string what a review target is called, like `Merge request`
----@field route fun(item: annotate.PublishItem): "inline"|"file"|"general"|"body", string where the item goes on the platform and the body sent there
+---@field route fun(item: annotate.PublishItem): "inline"|"suggestion"|"file"|"general"|"body", string where the item goes on the platform and the body sent there
 ---@field submit fun(target: annotate.Target, verdict: string, note?: string): table<string, string>? publishes every draft with the verdict, returning comment urls by draft id
 
 ---@class annotate.PublishOptions
@@ -201,7 +202,7 @@ function M.plan(annotations, target)
   return vim.tbl_map(function(annotation)
     local t = config.type(annotation.type) or { key = annotation.type, name = annotation.type, prompt = "" }
     local location = export.location(annotation)
-    local item = { annotation = annotation, location = location, body = config.options.publish.body(annotation, t, location) }
+    local item = { annotation = annotation, location = location, body = config.options.publish.body(annotation, t, location), rewrite = t.prefill == "selection" }
 
     if not annotation.file then
       return vim.tbl_extend("force", item, { kind = "repository" })
@@ -239,6 +240,26 @@ function M.plan(annotations, target)
       old_line = side == "old" and annotation.line or first.old,
     })
   end, annotations)
+end
+
+--- Turns the first fenced block of a rewrite on the new side of the diff into a suggestion, nil when it has none.
+---@param item annotate.PublishItem
+---@param info string info string of the suggestion fence, like `suggestion`
+---@return string?
+function M.suggest(item, info)
+  if not (item.rewrite and item.kind == "line" and item.side == "new") then
+    return nil
+  end
+
+  local lines = vim.split(item.body, "\n", { plain = true })
+  for index, line in ipairs(lines) do
+    local indent, fence = line:match("^(%s*)(```+)[^`]*$")
+    if fence then
+      lines[index] = indent .. fence .. info
+
+      return table.concat(lines, "\n")
+    end
+  end
 end
 
 --- Body prefixed with the location, for a note that is not positioned on its lines.
@@ -427,6 +448,8 @@ end
 local function destination(item)
   if item.destination == "inline" then
     return ("inline, %s side"):format(item.side)
+  elseif item.destination == "suggestion" then
+    return "suggestion"
   end
 
   local label = ({ file = "file comment", general = "general comment", body = "review body" })[item.destination] or item.destination
@@ -453,9 +476,29 @@ function M.summary(publisher, target, items, skipped, submit)
     rows[skip.annotation] = { ("- Status: skipped, %s on %s %s"):format(skip.entry.state, target.reference, skip.entry.comment_url or skip.entry.url) }
   end
 
-  local fallbacks = #vim.tbl_filter(function(item)
+  local function count(predicate)
+    return #vim.tbl_filter(predicate, items)
+  end
+  local suggestions = count(function(item)
+    return item.destination == "suggestion"
+  end)
+  local fallbacks = count(function(item)
     return item.fallback
-  end, items)
+  end)
+  local unsuggested = count(function(item)
+    return item.rewrite and item.destination ~= "suggestion"
+  end)
+
+  local totals = {}
+  if suggestions > 0 then
+    table.insert(totals, plural(suggestions, "suggestion"))
+  end
+  if fallbacks > 0 then
+    table.insert(totals, ("%d outside the diff"):format(fallbacks))
+  end
+  if unsuggested > 0 then
+    table.insert(totals, ("%s without a suggestion"):format(plural(unsuggested, "rewrite")))
+  end
 
   local lines = {
     ("# %s"):format(submit and "Submit review" or "Stage drafts"),
@@ -475,7 +518,7 @@ function M.summary(publisher, target, items, skipped, submit)
     "",
     "## Summary",
     "",
-    ("- To post: %d%s"):format(#items, fallbacks > 0 and (" (%d outside the diff)"):format(fallbacks) or ""),
+    ("- To post: %d%s"):format(#items, #totals > 0 and (" (%s)"):format(table.concat(totals, ", ")) or ""),
     ("- Skipped: %d (already draft or published)"):format(#skipped),
   })
 
@@ -714,16 +757,20 @@ function M.publish(opts)
     local fallbacks = #vim.tbl_filter(function(item)
       return item.fallback
     end, items)
+    local unsuggested = #vim.tbl_filter(function(item)
+      return item.rewrite and item.destination ~= "suggestion"
+    end, items)
 
     log.info(("published: platform=%s target=%s #posted=%d #skipped=%d verdict=%s"):format(publisher.name, target.id, posted, #skipped, tostring(verdict)))
     notify(
-      ("%s %s: %d %s, %d skipped as already posted, %d fell back to general comments%s."):format(
+      ("%s %s: %d %s, %d skipped as already posted, %d fell back to general comments%s%s."):format(
         target.reference,
         target.title,
         posted,
         submit and "submitted" or "staged",
         #skipped,
         fallbacks,
+        unsuggested > 0 and (", %s without a suggestion"):format(plural(unsuggested, "rewrite")) or "",
         verdict and (", %s"):format(verdict:gsub("_", " ")) or ""
       )
     )

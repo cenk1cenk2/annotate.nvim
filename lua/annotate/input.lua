@@ -10,6 +10,7 @@ local config = require("annotate.config")
 ---@field type? string
 ---@field text? string
 ---@field title? string fixed title for free text that has no type, cycling is disabled
+---@field location? annotate.Location what the note is taken on, for the `prefill` of its type
 
 ---@param opts annotate.InputOptions
 ---@param callback annotate.InputCallback
@@ -82,6 +83,27 @@ function M.title(types, index, width)
   return ("%s%s%s"):format(left >= 1 and "… " or "", table.concat(shown, " · "), right <= #types and " …" or "")
 end
 
+--- The annotated lines of the buffer in a fenced block tagged with its filetype, nil for whole-file and repository notes.
+---@param bufnr integer
+---@param location? annotate.Location
+---@return string[]?
+function M.prefill(bufnr, location)
+  if not (location and location.file and location.line > 0) then
+    return nil
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(bufnr, location.line - 1, location.line_end or location.line, false)
+  local longest = 2
+  for _, line in ipairs(lines) do
+    for ticks in line:gmatch("`+") do
+      longest = math.max(longest, #ticks)
+    end
+  end
+  local fence = ("`"):rep(longest + 1)
+
+  return vim.list_extend({ fence .. vim.bo[bufnr].filetype }, vim.list_extend(lines, { fence }))
+end
+
 --- Opens the annotation editor, calling back with the chosen type and text, or nils when cancelled or empty.
 ---@param opts annotate.InputOptions
 ---@param callback annotate.InputCallback
@@ -98,6 +120,19 @@ function M.open(opts, callback)
   index = index or 1
 
   local result = {}
+  local prefill = M.prefill(origin, opts.location)
+
+  ---@return boolean filled
+  local function fill(self)
+    if not prefill or types[index].prefill ~= "selection" or vim.trim(self:text()) ~= "" then
+      return false
+    end
+
+    vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, prefill)
+    vim.api.nvim_win_set_cursor(self.win, { 2, 0 })
+
+    return true
+  end
 
   local function title(self)
     self:set_title(opts.title and (" %s "):format(opts.title) or M.title(types, index, vim.api.nvim_win_get_width(self.win)), cfg.title_pos)
@@ -110,6 +145,7 @@ function M.open(opts, callback)
 
     index = (index - 1 + step) % #types + 1
     title(self)
+    fill(self)
   end
 
   local win = snacks.win({
@@ -190,7 +226,7 @@ function M.open(opts, callback)
 
   title(win)
 
-  if not opts.text then
+  if not opts.text and not fill(win) then
     vim.cmd.startinsert()
   end
 end

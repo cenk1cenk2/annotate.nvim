@@ -107,7 +107,7 @@ end
 ---@param location annotate.Location
 ---@param opts { type?: string }
 local function create(location, opts)
-  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key }, function(type_key, text)
+  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key, location = location }, function(type_key, text)
     if not type_key then
       return
     end

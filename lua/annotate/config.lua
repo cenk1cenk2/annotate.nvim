@@ -6,6 +6,7 @@ local M = {}
 ---@field icon string
 ---@field hl string
 ---@field prompt string
+---@field prefill? "selection" start a new note with the annotated lines in a fenced block
 
 ---@class annotate.InputKeys
 ---@field cycle string
@@ -132,6 +133,14 @@ local defaults = {
       icon = "",
       hl = "Special",
       prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+    },
+    {
+      key = "rewrite",
+      name = "Rewrite",
+      icon = "",
+      hl = "Function",
+      prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
+      prefill = "selection",
     },
     {
       key = "general",

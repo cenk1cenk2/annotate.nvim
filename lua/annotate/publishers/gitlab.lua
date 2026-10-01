@@ -83,17 +83,22 @@ function M.drafts(target)
 end
 
 function M.route(item)
-  if item.kind == "line" then
+  local publishers = require("annotate.publishers")
+
+  local suggestion = publishers.suggest(item, ("suggestion:-0+%d"):format((item.line_end or 0) - (item.line or 0)))
+  if suggestion then
+    return "suggestion", suggestion
+  elseif item.kind == "line" then
     return "inline", item.body
   end
 
-  return "general", item.kind == "repository" and item.body or require("annotate.publishers").located(item)
+  return "general", item.kind == "repository" and item.body or publishers.located(item)
 end
 
 function M.post(target, items, record)
   for _, item in ipairs(items) do
     local body = { note = item.body }
-    if item.destination == "inline" then
+    if item.destination == "inline" or item.destination == "suggestion" then
       body.position = {
         position_type = "text",
         base_sha = target.diff_refs.base_sha,

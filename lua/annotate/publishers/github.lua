@@ -129,7 +129,10 @@ end
 function M.route(item)
   local publishers = require("annotate.publishers")
 
-  if item.kind == "line" then
+  local suggestion = publishers.suggest(item, "suggestion")
+  if suggestion then
+    return "suggestion", suggestion
+  elseif item.kind == "line" then
     return "inline", item.body
   elseif item.kind == "file" and item.in_diff then
     return "file", (item.annotation.line == 0 and not item.annotation.rev) and item.body or publishers.located(item)
@@ -166,7 +169,7 @@ function M.post(target, items, record)
   end
 
   for _, item in ipairs(items) do
-    if item.destination == "inline" or item.destination == "file" then
+    if item.destination ~= "body" then
       local side = item.side == "old" and "LEFT" or "RIGHT"
       local variables = { review = target.review.node_id, path = item.path, body = item.body }
       if item.destination == "file" then

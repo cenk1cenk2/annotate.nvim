@@ -329,6 +329,54 @@ T["routes and bodies per platform"] = function()
   })
 end
 
+T["rewrites in the diff become suggestions covering their lines"] = function()
+  local text = "```lua\nX\nY\n```\nshorter"
+  local plan = publishers.plan({
+    add({ type = "rewrite", file = "a.lua", line = 2, line_end = 3, text = text }),
+    add({ type = "rewrite", file = "a.lua", line = 4, text = text }),
+    add({ type = "rewrite", file = "a.lua", line = 10, text = text }),
+    add({ type = "rewrite", file = "a.lua", line = 2, rev = BASE:sub(1, 11), text = text }),
+  }, target)
+
+  local function route(publisher)
+    return vim.tbl_map(function(item)
+      return { publisher.route(item) }
+    end, plan)
+  end
+
+  eq(route(publishers.registry.github), {
+    { "suggestion", "**[REWRITE]**\n\n```suggestion\nX\nY\n```\nshorter" },
+    { "suggestion", "**[REWRITE]**\n\n```suggestion\nX\nY\n```\nshorter" },
+    { "file", "`a.lua:10`\n\n**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
+    { "inline", "**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
+  })
+  eq(route(publishers.registry.gitlab), {
+    { "suggestion", "**[REWRITE]**\n\n```suggestion:-0+1\nX\nY\n```\nshorter" },
+    { "suggestion", "**[REWRITE]**\n\n```suggestion:-0+0\nX\nY\n```\nshorter" },
+    { "general", "`a.lua:10`\n\n**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
+    { "inline", "**[REWRITE]**\n\n```lua\nX\nY\n```\nshorter" },
+  })
+end
+
+T["a rewrite outside the diff posts a plain block and is counted"] = function()
+  remote("git@github.com:owner/repo.git")
+  stub(github())
+  config.setup({ publish = { summary = true } })
+  add({ type = "rewrite", file = "a.lua", line = 2, line_end = 3, text = "```lua\nX\n```" })
+  add({ type = "rewrite", file = "a.lua", line = 10, text = "```lua\nX\n```" })
+  local prompts = {}
+  answer({ "Proceed" }, prompts)
+
+  publishers.publish()
+
+  local threads = requests("GET", "^graphql$")
+  eq({ threads[1].body.variables.line, threads[1].body.variables.startLine, threads[1].body.variables.body }, { 3, 2, "**[REWRITE]**\n\n```suggestion\nX\n```" })
+  eq(threads[2].body.variables.subjectType, "FILE")
+  eq(prompts[1]:find("- To post: 2 (1 suggestion, 1 outside the diff, 1 rewrite without a suggestion)", 1, true) ~= nil, true)
+  eq(prompts[1]:find("- Destination: suggestion", 1, true) ~= nil, true)
+  eq(messages[#messages], "#7 Add the thing: 2 staged, 0 skipped as already posted, 1 fell back to general comments, 1 rewrite without a suggestion.")
+end
+
 T["refuses when HEAD is not the head of the merge request"] = function()
   stub(gitlab())
   git["rev-parse HEAD"] = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"

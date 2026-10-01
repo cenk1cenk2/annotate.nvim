@@ -154,6 +154,15 @@ require("annotate").setup({
       prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
     },
     {
+      key = "rewrite",
+      name = "Rewrite",
+      icon = "",
+      hl = "Function",
+      prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
+      -- a new note starts with the annotated lines in a fenced block tagged with the filetype
+      prefill = "selection",
+    },
+    {
       key = "general",
       name = "General",
       icon = "",
@@ -360,6 +369,8 @@ The input is a floating snacks.nvim window with markdown highlighting. The title
 - `submit` saves the note, in insert and normal mode. An empty note is discarded.
 - `cancel` closes the window without saving, in normal mode.
 
+A type with `prefill = "selection"`, like `rewrite`, starts a new note with the annotated lines in a fenced block tagged with the filetype of the annotated buffer, the cursor on its first line, so the note is the replacement you want. Cycling to such a type while the input is still empty fills it the same way. Whole-file and repository notes are never prefilled.
+
 ### Picker
 
 `<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. The `select` backend has no actions.
@@ -533,6 +544,8 @@ A note is inside the diff when every line of it falls into one hunk of the file'
 | Repository | General draft note | Review body |
 
 Each comment is `**[<TYPE>]**`, a blank line and the note, changed through `publish.body`.
+
+A note of a `prefill = "selection"` type, like `rewrite`, positioned on the new side of the diff turns its first fenced block into the forge's suggestion, which the author applies with one click: ` ```suggestion ` spanning the annotated lines on GitHub, ` ```suggestion:-0+N ` from the first annotated line on GitLab. Text around the block stays as it is. Suggestions only work in the diff, so a rewrite outside it keeps its plain block and the summary counts it.
 
 ### Staging and Submitting
 
