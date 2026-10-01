@@ -30,7 +30,8 @@ T["title falls back to the current type when it does not fit"] = function()
   local types = config.options.types
 
   eq(input.title(types, 2, 40), "1 A · [2 B] · 3 C")
-  eq(input.title(types, 2, 10), "‹ [2 B] ›")
+  eq(input.title(types, 2, 13), "… [2 B] · 3 C")
+  eq(input.title(types, 2, 9), "… [2 B] …")
 end
 
 T["footer names both cycle keys"] = function()

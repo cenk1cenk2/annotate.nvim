@@ -36,11 +36,45 @@ function M.title(types, index, width)
   local cfg = config.options.input
   local title = config.resolve(cfg.title, types[index], cfg.keys, types, index)
 
-  if vim.fn.strdisplaywidth(title) > width then
-    return ("‹ [%s %s] ›"):format(types[index].icon, types[index].name)
+  if vim.fn.strdisplaywidth(title) <= width then
+    return title
   end
 
-  return title
+  local function label(i)
+    return i == index and ("[%s %s]"):format(types[i].icon, types[i].name) or ("%s %s"):format(types[i].icon, types[i].name)
+  end
+
+  local shown = { label(index) }
+  local left, right = index - 1, index + 1
+  local function fits(candidate, first, last)
+    local more = (first > 1 and 2 or 0) + (last < #types and 2 or 0)
+
+    return vim.fn.strdisplaywidth(table.concat(candidate, " · ")) + more <= width
+  end
+
+  while left >= 1 or right <= #types do
+    local grew = false
+
+    for _, side in ipairs({ "right", "left" }) do
+      if side == "right" and right <= #types then
+        local candidate = vim.list_extend(vim.deepcopy(shown), { label(right) })
+        if fits(candidate, left + 1, right) then
+          shown, right, grew = candidate, right + 1, true
+        end
+      elseif side == "left" and left >= 1 then
+        local candidate = vim.list_extend({ label(left) }, shown)
+        if fits(candidate, left, right - 1) then
+          shown, left, grew = candidate, left - 1, true
+        end
+      end
+    end
+
+    if not grew then
+      break
+    end
+  end
+
+  return ("%s%s%s"):format(left >= 1 and "… " or "", table.concat(shown, " · "), right <= #types and " …" or "")
 end
 
 --- Opens the annotation editor, calling back with the chosen type and text, or nils when cancelled or empty.

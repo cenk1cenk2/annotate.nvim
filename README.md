@@ -220,7 +220,7 @@ require("annotate").setup({
     border = "rounded",
     -- snacks.nvim window position
     position = "float",
-    -- string or fun(type, keys, types, index), re-evaluated when cycling types, only the current type when it does not fit
+    -- string or fun(type, keys, types, index), re-evaluated when cycling types, truncated on both sides around the current type when it does not fit
     title = function(_, _, types, index)
       local names = {}
       for i, t in ipairs(types) do
