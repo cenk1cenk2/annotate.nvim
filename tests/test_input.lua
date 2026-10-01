@@ -1,3 +1,4 @@
+local H = dofile("tests/helpers.lua")
 local eq = MiniTest.expect.equality
 
 local config = require("annotate.config")
@@ -66,39 +67,6 @@ T["prefill fences lines holding backticks with a longer fence"] = function()
   eq(require("annotate.input").prefill(buffer({ "```lua" }), { file = "a.md", line = 1 }), { "````lua", "```lua", "````" })
 end
 
---- Stands in for snacks.nvim with a real window whose key handlers the test calls.
----@return table
-local function snacks()
-  local fake = {}
-  package.loaded.snacks = {
-    win = function(opts)
-      local bufnr = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, type(opts.text) == "table" and opts.text or vim.split(opts.text or "", "\n"))
-      local win = { buf = bufnr, win = vim.api.nvim_open_win(bufnr, true, { relative = "editor", row = 1, col = 1, width = 60, height = 5 }), opts = opts }
-      function win.text()
-        return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
-      end
-      function win.set_title() end
-      function win.close()
-        pcall(vim.api.nvim_win_close, win.win, true)
-        opts.on_close()
-      end
-      opts.on_buf(win)
-      fake.win = win
-
-      return win
-    end,
-  }
-
-  return fake
-end
-
----@param fake table
----@param key string
-local function press(fake, key)
-  fake.win.opts.keys[key][2](fake.win)
-end
-
 T["a prefill type opens with the selection and the cursor inside the block"] = function()
   config.setup({
     types = {
@@ -106,7 +74,7 @@ T["a prefill type opens with the selection and the cursor inside the block"] = f
       { key = "r", name = "R", icon = "2", hl = "Comment", export = { prompt = "" }, prefill = "selection" },
     },
   })
-  local fake = snacks()
+  local fake = H.snacks()
   vim.api.nvim_set_current_buf(buffer({ "one", "two" }))
 
   require("annotate.input").open({ type = "r", location = { file = "a.lua", line = 2 } }, function() end)
@@ -123,26 +91,26 @@ T["cycling into a prefill type fills only an empty input"] = function()
       { key = "r", name = "R", icon = "2", hl = "Comment", export = { prompt = "" }, prefill = "selection" },
     },
   })
-  local fake = snacks()
+  local fake = H.snacks()
   vim.api.nvim_set_current_buf(buffer({ "one", "two" }))
   local keys = config.options.input.keys
 
   require("annotate.input").open({ type = "a", location = { file = "a.lua", line = 1, line_end = 2 } }, function() end)
   eq(vim.api.nvim_buf_get_lines(fake.win.buf, 0, -1, false), { "" })
 
-  press(fake, keys.cycle)
+  H.press(fake, keys.cycle)
   eq(vim.api.nvim_buf_get_lines(fake.win.buf, 0, -1, false), { "```lua", "one", "two", "```" })
 
   vim.api.nvim_buf_set_lines(fake.win.buf, 0, -1, false, { "mine" })
-  press(fake, keys.cycle)
-  press(fake, keys.cycle)
+  H.press(fake, keys.cycle)
+  H.press(fake, keys.cycle)
   eq(vim.api.nvim_buf_get_lines(fake.win.buf, 0, -1, false), { "mine" })
   vim.cmd.stopinsert()
   package.loaded.snacks = nil
 end
 
 T["a titled input calls back with the empty text on submit and nils on close"] = function()
-  local fake = snacks()
+  local fake = H.snacks()
   local keys = config.options.input.keys
   local results = {}
   local function open()
@@ -152,9 +120,9 @@ T["a titled input calls back with the empty text on submit and nils on close"] =
   end
 
   open()
-  press(fake, keys.submit)
+  H.press(fake, keys.submit)
   open()
-  press(fake, keys.close)
+  H.press(fake, keys.close)
   vim.wait(100, function()
     return #results == 2
   end)

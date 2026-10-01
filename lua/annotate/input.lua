@@ -11,6 +11,7 @@ local config = require("annotate.config")
 ---@field text? string
 ---@field title? string fixed title for free text that has no type, cycling is disabled; submitting calls back with a nil type and the text, empty included, cancelling with nils
 ---@field location? annotate.Location what the note is taken on, for the `prefill` of its type
+---@field origin? integer buffer the note is taken on, defaults to the current one
 
 ---@param opts annotate.InputOptions
 ---@param callback annotate.InputCallback
@@ -118,7 +119,7 @@ function M.open(opts, callback)
   end
 
   local cfg = config.options.input
-  local origin = vim.api.nvim_get_current_buf()
+  local origin = opts.origin or vim.api.nvim_get_current_buf()
   local types = config.options.types
   local _, index = config.type(opts.type)
   index = index or 1
@@ -126,9 +127,20 @@ function M.open(opts, callback)
   local result = {}
   local prefill = M.prefill(origin, opts.location)
 
+  --- Fills an empty input with the prefill on a prefill type, and empties an untouched prefill on any other type.
   ---@return boolean filled
   local function fill(self)
-    if not prefill or types[index].prefill ~= "selection" or vim.trim(self:text()) ~= "" then
+    if not prefill then
+      return false
+    end
+
+    if types[index].prefill ~= "selection" then
+      if self:text() == table.concat(prefill, "\n") then
+        vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, {})
+      end
+
+      return false
+    elseif vim.trim(self:text()) ~= "" then
       return false
     end
 

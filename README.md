@@ -421,7 +421,7 @@ The input is a floating snacks.nvim window with markdown highlighting. The title
 - `submit` saves the note, in insert and normal mode. An empty note is discarded.
 - `cancel` closes the window without saving, in normal mode.
 
-A type with `prefill = "selection"`, like `rewrite`, starts a new note with the annotated lines in a fenced block tagged with the filetype of the annotated buffer, the cursor on its first line, so the note is the replacement you want. Cycling to such a type while the input is still empty fills it the same way. Whole-file and repository notes are never prefilled.
+A type with `prefill = "selection"`, like `rewrite`, starts a new note with the annotated lines in a fenced block tagged with the filetype of the annotated buffer, the cursor on its first line, so the note is the replacement you want. Cycling to such a type while the input is still empty fills it the same way, and cycling away from an untouched prefill empties the input again; text you wrote is never touched. The buffer and lines are taken when the command runs, so `add_with_type` prefills from where you were before the type chooser opened. Editing a note keeps its text, and whole-file and repository notes are never prefilled.
 
 ### Picker
 

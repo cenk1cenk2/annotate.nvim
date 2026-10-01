@@ -47,6 +47,8 @@ local T = MiniTest.new_set({
       vim.cmd.edit("a.lua")
     end,
     post_case = function()
+      package.loaded.snacks = nil
+      vim.cmd.stopinsert()
       input.open = open
       vim.ui.select = select
       vim.notify = notify
@@ -430,6 +432,89 @@ T["quickfix lists every note, repository notes without a file"] = function()
       { "[GENERAL] repository  repository", 0, 0, "G", false, { id = repository.id, type = "general" } },
     }
   )
+end
+
+---@param fake table
+---@return string[]
+local function written(fake)
+  return vim.api.nvim_buf_get_lines(fake.win.buf, 0, -1, false)
+end
+
+--- Opens the real input on a fake snacks.nvim window over `a.lua` with the cursor on line 2.
+---@return table
+local function rewriting()
+  input.open = open
+  require("annotate").setup({ picker = { backend = "select" } })
+  vim.bo.filetype = "lua"
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+  return H.snacks()
+end
+
+T["add prefills a rewrite with the current line"] = function()
+  local fake = rewriting()
+
+  api.add({ type = "rewrite" })
+
+  eq(written(fake), { "```lua", "two", "```" })
+  eq(vim.api.nvim_win_get_cursor(fake.win.win), { 2, 0 })
+end
+
+T["add prefills a rewrite with the visual selection"] = function()
+  local fake = rewriting()
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  vim.api.nvim_feedkeys("Vj", "nx!", false)
+
+  api.add({ type = "rewrite" })
+
+  eq(written(fake), { "```lua", "one", "two", "```" })
+end
+
+T["cycling onto rewrite prefills, away from an untouched prefill empties, and user text stays"] = function()
+  local fake = rewriting()
+  local keys = require("annotate.config").options.input.keys
+
+  api.add()
+  eq(written(fake), { "" })
+
+  H.press(fake, keys.cycle)
+  eq(written(fake), { "```lua", "two", "```" })
+
+  H.press(fake, keys.cycle_prev)
+  eq(written(fake), { "" })
+
+  H.press(fake, keys.cycle)
+  vim.api.nvim_buf_set_lines(fake.win.buf, 1, 2, false, { "TWO" })
+  H.press(fake, keys.cycle_prev)
+  eq(written(fake), { "```lua", "TWO", "```" })
+
+  vim.api.nvim_buf_set_lines(fake.win.buf, 0, -1, false, { "mine" })
+  H.press(fake, keys.cycle)
+  eq(written(fake), { "mine" })
+end
+
+T["add_with_type prefills from the buffer and line captured before the type chooser"] = function()
+  local fake = rewriting()
+  local origin = vim.api.nvim_get_current_buf()
+  vim.ui.select = function(items, _, callback)
+    vim.api.nvim_set_current_buf(vim.api.nvim_create_buf(true, true))
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    callback(items[2])
+  end
+
+  api.add_with_type()
+
+  eq(written(fake), { "```lua", "two", "```" })
+  eq(vim.b[fake.win.buf].annotate_origin, origin)
+end
+
+T["edit keeps the text of a rewrite"] = function()
+  local fake = rewriting()
+  store.add({ file = "a.lua", line = 2, type = "rewrite", text = "```lua\nTWO\n```" })
+
+  api.edit()
+
+  eq(written(fake), { "```lua", "TWO", "```" })
 end
 
 return T

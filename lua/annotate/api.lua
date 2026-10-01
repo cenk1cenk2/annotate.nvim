@@ -105,9 +105,9 @@ local function choose(annotations, all, callback)
 end
 
 ---@param location annotate.Location
----@param opts { type?: string }
+---@param opts { type?: string, origin?: integer } origin is the annotated buffer, captured when the command runs
 local function create(location, opts)
-  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key, location = location }, function(type_key, text)
+  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key, location = location, origin = opts.origin }, function(type_key, text)
     if not type_key then
       return
     end
@@ -174,19 +174,21 @@ end
 function M.add(opts)
   opts = opts or {}
 
+  local origin = vim.api.nvim_get_current_buf()
   local location = selection(opts)
   if location then
-    create(location, opts)
+    create(location, vim.tbl_extend("force", opts, { origin = origin }))
   end
 end
 
 --- Like `add`, choosing the annotation type before writing the note.
 ---@param opts? { line1?: integer, line2?: integer }
 function M.add_with_type(opts)
+  local origin = vim.api.nvim_get_current_buf()
   local location = selection(opts or {})
   if location then
     choose_type(function(key)
-      create(location, { type = key })
+      create(location, { type = key, origin = origin })
     end)
   end
 end
