@@ -30,6 +30,7 @@
 ---@field base string sha the old side of the diff shows
 ---@field files annotate.DiffFile[]
 ---@field remote annotate.Remote
+---@field draft? boolean the merge or pull request is a draft
 ---@field ids? table<string, string|integer> forge ids of the merge or pull request recorded with every posted entry
 
 ---@class annotate.PublishItem
@@ -75,13 +76,13 @@
 ---@field [string] any
 
 ---@class annotate.Verdict
----@field key "comment"|"approve"|"request_changes"
+---@field key "comment"|"approve"|"unapprove"|"request_changes"
 ---@field label string
 
 ---@class annotate.Publisher
 ---@field name string
 ---@field label string what the platform is called, like `GitLab`
----@field verdicts annotate.Verdict[]
+---@field verdicts fun(target: annotate.Target): annotate.Verdict[], string? the verdicts the current user may give on the target, and why the others are not available
 ---@field match fun(url: string): boolean
 ---@field resolve fun(remote: annotate.Remote): annotate.Target? nil when the branch has no open merge or pull request
 ---@field drafts fun(target: annotate.Target): table<string, true> ids of the drafts of the current user still pending on the target
@@ -93,7 +94,7 @@
 
 ---@class annotate.PublishOptions
 ---@field publish? boolean submit the review instead of staging it, defaults to `external.submit`
----@field verdict? "comment"|"approve"|"request_changes" skips the verdict question when submitting
+---@field verdict? "comment"|"approve"|"unapprove"|"request_changes" skips the verdict question when submitting
 ---@field note? string skips the summary note question when submitting, empty for none
 ---@field force? boolean skips the summary
 ---@field legend? boolean label each comment with its type and post the legend of the types, defaults to `external.legend`
@@ -604,8 +605,9 @@ end
 ---@param skipped { annotation: annotate.Annotation, entry: annotate.Posted }[]
 ---@param submit boolean
 ---@param legend boolean
+---@param verdicts? { list: annotate.Verdict[], reason?: string } what a submit may conclude with
 ---@return string[]
-function M.summary(publisher, target, items, skipped, submit, legend)
+function M.summary(publisher, target, items, skipped, submit, legend, verdicts)
   local export = require("annotate.export")
   local cfg = config.options.export
 
@@ -664,8 +666,21 @@ function M.summary(publisher, target, items, skipped, submit, legend)
     ("- URL: %s"):format(target.url),
     ("- Head: `%s` (matches local HEAD)"):format(target.head:sub(1, 11)),
   }
-  if submit then
-    vim.list_extend(lines, { "", "## Review", "", "- Verdict and note: chosen next" })
+  if target.draft then
+    table.insert(lines, ("- Draft: yes, comments are allowed but the %s is not ready"):format(publisher.target:lower()))
+  end
+  if submit and verdicts then
+    local labels = vim.tbl_map(function(v)
+      return v.label
+    end, verdicts.list)
+    vim.list_extend(lines, {
+      "",
+      "## Review",
+      "",
+      #labels == 1 and ("- Verdict: %s%s"):format(labels[1], verdicts.reason and (" (%s)"):format(verdicts.reason) or "")
+        or ("- Verdict: chosen next from %s%s"):format(table.concat(labels, ", "), verdicts.reason and (" (%s)"):format(verdicts.reason) or ""),
+      "- Note: chosen next",
+    })
   end
   vim.list_extend(lines, {
     "",
@@ -751,13 +766,14 @@ end
 
 --- Asks for the verdict and the summary note of a submit, nil when the verdict is cancelled.
 ---@param publisher annotate.Publisher
+---@param verdicts { list: annotate.Verdict[], reason?: string }
 ---@param opts annotate.PublishOptions
 ---@return string?, string?
-local function review(publisher, opts)
-  local verdict = opts.verdict
+local function review(publisher, verdicts, opts)
+  local verdict = opts.verdict or #verdicts.list == 1 and verdicts.list[1].key or nil
   if not verdict then
     local chosen = M.wait(function(callback)
-      vim.ui.select(publisher.verdicts, {
+      vim.ui.select(verdicts.list, {
         prompt = ("%s: submit the review as"):format(config.options.notify.title),
         format_item = function(v)
           return v.label
@@ -770,10 +786,10 @@ local function review(publisher, opts)
     return nil
   end
 
-  if not vim.iter(publisher.verdicts):any(function(v)
+  if not vim.iter(verdicts.list):any(function(v)
     return v.key == verdict
   end) then
-    error(("annotate: %s has no %s verdict"):format(publisher.label, verdict), 0)
+    error(("annotate: the %s verdict is not available on this %s%s"):format(verdict, publisher.target:lower(), verdicts.reason and (": %s"):format(verdicts.reason) or ""), 0)
   end
 
   local note = opts.note
@@ -871,9 +887,15 @@ function M.publish(opts)
       return notify(("Every annotation is already posted to %s %s, %s skipped."):format(target.reference, target.title, plural(#skipped, "note")))
     end
 
+    local verdicts
+    if submit then
+      local list, reason = publisher.verdicts(target)
+      verdicts = { list = list, reason = reason }
+    end
+
     if not opts.force and cfg.summary then
       local proceed = M.wait(function(callback)
-        M.confirm(submit and "Submit review" or "Stage drafts", M.summary(publisher, target, items, skipped, submit, legend), callback)
+        M.confirm(submit and "Submit review" or "Stage drafts", M.summary(publisher, target, items, skipped, submit, legend, verdicts), callback)
       end)
       if not proceed then
         return notify("Publishing was cancelled.", vim.log.levels.WARN)
@@ -882,7 +904,7 @@ function M.publish(opts)
 
     local verdict, note
     if submit then
-      verdict, note = review(publisher, opts)
+      verdict, note = review(publisher, verdicts, opts)
       if not verdict then
         return notify("Submitting the review was cancelled.", vim.log.levels.WARN)
       end

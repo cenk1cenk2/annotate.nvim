@@ -7,11 +7,6 @@ M.label = "GitLab"
 
 M.target = "Merge request"
 
-M.verdicts = {
-  { key = "comment", label = "Comment" },
-  { key = "approve", label = "Approve" },
-}
-
 function M.match(url)
   local host = require("annotate.publishers").parse_remote(url)
 
@@ -68,6 +63,7 @@ function M.resolve(remote)
     url = mr.web_url,
     branch = mr.source_branch,
     target_branch = mr.target_branch,
+    draft = mr.draft,
     head = mr.diff_refs.head_sha,
     base = mr.diff_refs.base_sha,
     diff_refs = mr.diff_refs,
@@ -77,6 +73,27 @@ function M.resolve(remote)
     end, M.api(remote, ("merge_requests/%d/diffs"):format(mr.iid), { paginate = true }) or {}),
     remote = remote,
   }
+end
+
+--- Comment always; Approve while the user can approve and has not; Unapprove once the user has approved.
+function M.verdicts(target)
+  local approvals = M.api(target.remote, ("merge_requests/%d/approvals"):format(target.id))
+  local has = approvals.user_has_approved
+  if has == nil then
+    local username = require("annotate.publishers").json({ require("annotate.config").options.external.gitlab_cli, "api", "--hostname", target.remote.host, "user" }).username
+    has = vim.iter(approvals.approved_by or {}):any(function(approval)
+      return approval.user.username == username
+    end)
+  end
+
+  local verdicts = { { key = "comment", label = "Comment" } }
+  if has then
+    table.insert(verdicts, { key = "unapprove", label = "Unapprove" })
+  elseif approvals.user_can_approve ~= false then
+    table.insert(verdicts, { key = "approve", label = "Approve" })
+  end
+
+  return verdicts, approvals.user_can_approve == false and not has and "approving is not available: you can not approve this merge request" or nil
 end
 
 function M.drafts(target)
@@ -181,6 +198,8 @@ function M.submit(target, verdict, note)
 
   if verdict == "approve" then
     M.api(target.remote, ("merge_requests/%d/approve"):format(target.id), { method = "POST", body = { sha = target.head } })
+  elseif verdict == "unapprove" then
+    M.api(target.remote, ("merge_requests/%d/unapprove"):format(target.id), { method = "POST" })
   end
 
   local notes = {}

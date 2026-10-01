@@ -38,7 +38,7 @@ local git
 
 --- Fake GitLab project holding the merge request, its drafts and its notes.
 local function gitlab()
-  local forge = { iid = 5, drafts = {}, notes = {}, next = 100, approved = false }
+  local forge = { iid = 5, drafts = {}, notes = {}, next = 100, approved = false, approvals = { user_can_approve = true, user_has_approved = false } }
 
   function forge.handle(endpoint, method, body)
     local path = endpoint:gsub("^projects/[^/]+/", "")
@@ -98,6 +98,10 @@ local function gitlab()
       return vim.tbl_map(function(n)
         return { id = "d" .. n.id, notes = { n } }
       end, forge.notes)
+    elseif path:match("/approvals$") then
+      return forge.approvals
+    elseif path:match("/unapprove$") then
+      forge.approved = false
     elseif path:match("/approve$") then
       forge.approved = body.sha
     end
@@ -108,7 +112,7 @@ end
 
 --- Fake GitHub repository holding the pull request and the pending review of the current user.
 local function github()
-  local forge = { number = 7, review = nil, comments = {}, next = 200 }
+  local forge = { number = 7, review = nil, comments = {}, next = 200, author = "someone", draft = false }
 
   function forge.handle(endpoint, _, body)
     local pulls = ("repos/owner/repo/pulls/%d"):format(forge.number)
@@ -179,6 +183,8 @@ local function stub(forge)
             number = forge.number,
             title = "Add the thing",
             url = "https://github.com/owner/repo/pull/7",
+            author = { login = forge.author },
+            isDraft = forge.draft,
             headRefName = "feature",
             baseRefName = "main",
             headRefOid = HEAD,
@@ -698,10 +704,28 @@ T["GitLab submit publishes the drafts, posts the note and approves"] = function(
   eq(entry.comment_url, "https://gitlab.example.com/group/sub/project/-/merge_requests/5#note_1101")
 end
 
-T["GitLab offers no request changes verdict and an empty note posts nothing"] = function()
+--- Answers the verdict chooser with `want`, returning the labels it offered, or nil when it was not asked.
+---@param want string
+---@return { offered?: string[] }
+local function verdict(want)
+  local asked = {}
+  vim.ui.select = function(items, opts, callback)
+    local format = opts.format_item or tostring
+    asked.offered = vim.tbl_map(format, items)
+    for _, item in ipairs(items) do
+      if format(item) == want then
+        return callback(item)
+      end
+    end
+    callback(nil)
+  end
+
+  return asked
+end
+
+T["an empty note posts nothing"] = function()
   stub(gitlab())
-  local prompts = {}
-  answer({ "Comment" }, prompts)
+  verdict("Comment")
   input.open = function(opts, callback)
     eq(opts.title, "Review note")
     callback(nil, nil)
@@ -710,15 +734,93 @@ T["GitLab offers no request changes verdict and an empty note posts nothing"] = 
 
   publishers.publish({ publish = true })
 
-  eq(
-    vim.tbl_map(function(v)
-      return v.label
-    end, publishers.registry.gitlab.verdicts),
-    { "Comment", "Approve" }
-  )
-  eq(prompts, { "annotate: submit the review as" })
   eq(#requests("POST", "/notes$"), 0)
   eq(#requests("POST", "/approve$"), 0)
+end
+
+T["GitLab offers Approve while the user can approve"] = function()
+  stub(gitlab())
+  local asked = verdict("Approve")
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(asked.offered, { "Comment", "Approve" })
+  eq(#requests("POST", "/approve$"), 1)
+end
+
+T["GitLab offers Unapprove once the user has approved"] = function()
+  local forge = gitlab()
+  forge.approvals = { user_can_approve = false, user_has_approved = true }
+  forge.approved = HEAD
+  stub(forge)
+  local asked = verdict("Unapprove")
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(asked.offered, { "Comment", "Unapprove" })
+  eq(forge.approved, false)
+end
+
+T["GitLab only comments without asking when the user can not approve"] = function()
+  local forge = gitlab()
+  forge.approvals = { user_can_approve = false, user_has_approved = false }
+  stub(forge)
+  config.setup({ external = { summary = true } })
+  local asked = verdict("Proceed")
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(asked.offered, { "Proceed", "Cancel" })
+  eq(#requests("POST", "bulk_publish$"), 1)
+  eq(#requests("POST", "/approve$"), 0)
+end
+
+T["GitHub offers only Comment on a pull request the user authored"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  forge.author = "me"
+  forge.draft = true
+  stub(forge)
+  config.setup({ external = { summary = true } })
+  local prompts = {}
+  answer({ "Proceed" }, prompts)
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(#prompts, 1)
+  eq(prompts[1]:find("- Verdict: Comment (approving is not available: you authored this pull request)", 1, true) ~= nil, true)
+  eq(prompts[1]:find("- Draft: yes, comments are allowed but the pull request is not ready", 1, true) ~= nil, true)
+  eq(forge.submitted.event, "COMMENT")
+end
+
+T["GitHub offers every verdict on someone else's pull request"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  stub(forge)
+  local asked = verdict("Approve")
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(asked.offered, { "Comment", "Approve", "Request changes" })
+  eq(forge.submitted.event, "APPROVE")
+end
+
+T["a verdict the target does not allow is refused"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  forge.author = "me"
+  stub(forge)
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, verdict = "approve", note = "" })
+
+  eq(messages[#messages], "annotate: the approve verdict is not available on this pull request: approving is not available: you authored this pull request")
+  eq(forge.submitted, nil)
 end
 
 T["cancelling the verdict posts nothing"] = function()

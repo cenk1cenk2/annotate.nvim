@@ -7,12 +7,6 @@ M.label = "GitHub"
 
 M.target = "Pull request"
 
-M.verdicts = {
-  { key = "comment", label = "Comment" },
-  { key = "approve", label = "Approve" },
-  { key = "request_changes", label = "Request changes" },
-}
-
 M.thread = [[
 mutation($review: ID!, $path: String!, $body: String!, $line: Int, $side: DiffSide, $startLine: Int, $startSide: DiffSide, $subjectType: PullRequestReviewThreadSubjectType) {
   addPullRequestReviewThread(input: { pullRequestReviewId: $review, path: $path, body: $body, line: $line, side: $side, startLine: $startLine, startSide: $startSide, subjectType: $subjectType }) {
@@ -90,7 +84,7 @@ function M.resolve(remote)
     "--limit",
     "1",
     "--json",
-    "id,number,title,url,headRefName,baseRefName,headRefOid,baseRefOid",
+    "id,number,title,url,author,isDraft,headRefName,baseRefName,headRefOid,baseRefOid",
   })[1]
   if not pr then
     return nil
@@ -105,6 +99,8 @@ function M.resolve(remote)
     target_branch = pr.baseRefName,
     head = pr.headRefOid,
     base = publishers.git({ "merge-base", pr.baseRefOid, pr.headRefOid }) or pr.baseRefOid,
+    author = pr.author and pr.author.login,
+    draft = pr.isDraft,
     ids = { pr_node_id = pr.id },
     remote = remote,
   }
@@ -115,8 +111,30 @@ function M.resolve(remote)
   return target
 end
 
+--- Comment always; Approve and Request changes unless the user authored the pull request, which GitHub refuses.
+function M.verdicts(target)
+  if M.login(target) == target.author then
+    return { { key = "comment", label = "Comment" } }, "approving is not available: you authored this pull request"
+  end
+
+  return {
+    { key = "comment", label = "Comment" },
+    { key = "approve", label = "Approve" },
+    { key = "request_changes", label = "Request changes" },
+  }
+end
+
+--- Login of the authenticated user, asked once per target.
+---@param target annotate.Target
+---@return string
+function M.login(target)
+  target.login = target.login or M.api(target.remote, "user").login
+
+  return target.login
+end
+
 function M.drafts(target)
-  local login = M.api(target.remote, "user").login
+  local login = M.login(target)
   target.review = vim.iter(M.api(target.remote, pulls(target, "/reviews?per_page=100"), { paginate = true })):find(function(review)
     return review.state == "PENDING" and review.user.login == login
   end)

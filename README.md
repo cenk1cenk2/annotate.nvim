@@ -607,7 +607,11 @@ A note of a `prefill = "selection"` type, like `rewrite`, positioned on the new 
 Before anything is posted, a float shows the plan in the shape of the export: the target with its branches, URL and head, the totals, whether the legend is on and its text, then every note with its destination, whether it is new, an update or skipped, and the exact body that is sent. `<CR>` or `y` proceeds, `q`, `<Esc>` or `n` cancels (`external.summary_keys`). `opts.force` or `external.summary = false` skips it.
 
 - Staging, the default, leaves everything as drafts only you can see: GitLab draft notes, or a pending GitHub review. Nothing reaches the author.
-- Submitting (`opts.publish = true`, `external.submit`, or `:Annotate publish!`) asks for the verdict and an optional summary note, then publishes every draft at once, including the ones staged earlier. GitLab offers Comment and Approve: the drafts are published together, the note is posted as a comment, and Approve approves the merge request at its head. GitHub offers Comment, Approve and Request changes: the pending review receives the new comments and is submitted with the verdict and the note as its body. `opts.verdict` and `opts.note` answer up front, cancelling the verdict cancels the submit.
+- Submitting (`opts.publish = true`, `external.submit`, or `:Annotate publish!`) asks for the verdict and an optional summary note, then publishes every draft at once, including the ones staged earlier. The chooser only lists the verdicts the forge allows you on that merge or pull request, and when Comment is the only one left it is used without asking, with the reason in the summary's Review section.
+  - GitLab reads the merge request's approvals: Approve while you can approve and have not, Unapprove once you have. The drafts are published together, the note is posted as a comment, and Approve approves the merge request at its head.
+  - GitHub offers Comment, Approve and Request changes, or only Comment on a pull request you authored, since GitHub refuses the others there. The pending review receives the new comments and is submitted with the verdict and the note as its body.
+  - Only open merge and pull requests are considered. A draft is marked in the summary; comments on it are allowed.
+  - `opts.verdict` and `opts.note` answer up front, a verdict the target does not allow is refused, and cancelling the verdict cancels the submit.
 
 ### Duplicates and Updates
 
