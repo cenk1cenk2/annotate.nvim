@@ -293,6 +293,90 @@ T["type action cycles to the next type and wraps around"] = function()
   eq(p.refreshed, 1)
 end
 
+T["restore into a non-empty store archives it first and replaces it"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  store.archive()
+  store.add({ file = "a.lua", line = 2, type = "bug", text = "current" })
+  local prompts = answer({ " · 1 notes · 1 bug" })
+
+  api.restore()
+
+  eq(prompts, { "Restore archive" })
+  eq(texts(), { "archived" })
+  eq(#store.archives(), 1)
+  eq(store.read(store.archives()[1])[1].text, "current")
+end
+
+T["restore merges only when asked to"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  store.archive()
+  store.add({ file = "a.lua", line = 2, type = "bug", text = "current" })
+  answer({ " · 1 notes · 1 bug" })
+
+  api.restore({ mode = "merge" })
+
+  eq(texts(), { "current", "archived" })
+  eq(store.archives(), {})
+end
+
+---@param selected annotate.Annotation[]
+---@param current annotate.Annotation
+local function selecting(selected, current)
+  return {
+    closed = false,
+    selected = function(_, opts)
+      local items = vim.tbl_map(function(annotation)
+        return { annotation = annotation }
+      end, selected)
+
+      return (#items == 0 and opts.fallback) and { { annotation = current } } or items
+    end,
+    close = function(self)
+      self.closed = true
+    end,
+  }
+end
+
+T["split keeps the selected notes and archives a snapshot of all of them"] = function()
+  require("annotate").setup({ picker = { force = { split = true } } })
+  local kept = store.add({ file = "a.lua", line = 1, type = "bug", text = "kept" })
+  store.update(kept.id, { posted = { { platform = "gitlab", target = 5, id = 1, state = "draft" } } })
+  local other = store.add({ file = "a.lua", line = 2, type = "bug", text = "other" })
+  local messages = {}
+  vim.notify = function(message)
+    table.insert(messages, message)
+  end
+  local p = selecting({ kept }, other)
+
+  api.actions.split.action(p)
+
+  eq(p.closed, true)
+  local stored = store.load(true)
+  eq(#stored, 1)
+  eq({ stored[1].id, stored[1].text, stored[1].posted[1].target }, { kept.id, "kept", 5 })
+  eq(
+    vim.tbl_map(function(annotation)
+      return annotation.text
+    end, store.read(store.archives()[1])),
+    { "kept", "other" }
+  )
+  eq(messages, { "Kept 1 notes, archived 2." })
+end
+
+T["split without a selection keeps the note under the cursor after confirmation"] = function()
+  require("annotate").setup()
+  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  local current = store.add({ file = "a.lua", line = 2, type = "bug", text = "current" })
+  local prompts = answer({ "Yes" })
+
+  api.actions.split.action(selecting({}, current))
+
+  eq(prompts, { "Archive all 2 annotations and keep the 1 selected?" })
+  eq(texts(), { "current" })
+end
+
 T["add_repository stores a note attached to no file"] = function()
   input.open = function(_, callback)
     callback("general", "about everything")

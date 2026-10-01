@@ -192,6 +192,17 @@ function M.archive()
   return target
 end
 
+--- Archives every annotation as a snapshot and keeps only the given ones in the store.
+---@param keep annotate.Annotation[]
+---@return string? archived path, nil when nothing was stored
+function M.split(keep)
+  local archived = M.archive()
+  M.annotations = vim.deepcopy(keep)
+  M.save()
+
+  return archived
+end
+
 --- Archives of the current repository, newest first.
 ---@return string[]
 function M.archives()

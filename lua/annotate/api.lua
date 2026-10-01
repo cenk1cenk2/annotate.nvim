@@ -473,7 +473,7 @@ function M.pick()
     end)
   end
 
-  local actions, keys = bind({ "edit", "delete", "delete_all", "type" })
+  local actions, keys = bind({ "edit", "delete", "delete_all", "type", "split" })
 
   require("snacks").picker.pick({
     title = config.options.picker.title,
@@ -562,6 +562,32 @@ M.actions = {
       confirm("Archive and clear all annotations?", clear)
     end,
   },
+  split = {
+    desc = "Archive all annotations and keep the selected ones",
+    action = function(picker)
+      local annotations = vim.tbl_map(function(item)
+        return item.annotation
+      end, picker:selected({ fallback = true }))
+      if #annotations == 0 then
+        return
+      end
+
+      local total = #store.all()
+      local function split()
+        picker:close()
+        store.split(annotations)
+        marks.refresh()
+
+        notify(("Kept %d notes, archived %d."):format(#annotations, total), vim.log.levels.INFO)
+      end
+
+      if config.options.picker.force.split then
+        return split()
+      end
+
+      confirm(("Archive all %d annotations and keep the %d selected?"):format(total, #annotations), split)
+    end,
+  },
   restore_delete = {
     desc = "Delete archives permanently",
     action = function(picker)
@@ -642,30 +668,18 @@ local function archive_label(path)
   return ("%s-%s-%s %s:%s · %d notes · %s"):format(year, month, day, hour, min, #annotations, table.concat(types, ", "))
 end
 
---- Restores an archive, asking whether to merge or replace when the store is not empty and no mode is given.
+--- Restores an archive, archiving the current notes first unless merging into them.
 ---@param path string
 ---@param mode? "merge"|"replace"
 local function restore(path, mode)
-  local function run(chosen)
-    local count = store.restore(path, chosen)
-    marks.refresh()
+  local count = store.restore(path, mode or "replace")
+  marks.refresh()
 
-    notify(("Restored %d annotations from %s."):format(count, path), vim.log.levels.INFO)
-  end
-
-  if mode or #store.all() == 0 then
-    return run(mode or "merge")
-  end
-
-  vim.ui.select({ "Merge", "Replace", "Cancel" }, { prompt = "The repository has annotations, restore the archive by" }, function(choice)
-    if choice == "Merge" or choice == "Replace" then
-      run(choice:lower())
-    end
-  end)
+  notify(("Restored %d annotations from %s."):format(count, path), vim.log.levels.INFO)
 end
 
 --- Picks an archive of the repository and restores it.
----@param opts? { mode?: "merge"|"replace" } skips the merge or replace question
+---@param opts? { mode?: "merge"|"replace" } `merge` appends the archive to the current notes instead of archiving them first
 function M.restore(opts)
   opts = opts or {}
   if not root() then

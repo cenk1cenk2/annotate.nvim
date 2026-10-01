@@ -284,14 +284,16 @@ require("annotate").setup({
       delete = "<C-d>",
       delete_all = "<C-x>",
       type = "<C-t>",
+      split = "<C-c>",
       -- in the restore picker
       restore_delete = "<C-d>",
       restore_clear = "<C-x>",
     },
-    -- skip the confirmation of the delete and delete_all actions, delete also covers restore_delete
+    -- skip the confirmation of the delete, delete_all and split actions, delete also covers restore_delete
     force = {
       delete = false,
       delete_all = false,
+      split = false,
       restore_clear = false,
     },
   },
@@ -379,6 +381,9 @@ A type with `prefill = "selection"`, like `rewrite`, starts a new note with the 
 - `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set unless `picker.force.delete` is.
 - `delete_all` archives and clears every note after confirmation, skipped with `picker.force.delete_all`, like `clear`, and closes the picker.
 - `type` moves the selected notes to the next type in the configured order.
+- `split` archives every note as a snapshot, then keeps only the selected notes, or the one under the cursor, in the store with their ids and where they were posted, so they start a new session. It confirms unless `picker.force.split` is set, and closes the picker.
+
+`<Tab>` and `<S-Tab>` select notes, as snacks.nvim binds them by default.
 
 ### Show
 
@@ -397,7 +402,7 @@ A type with `prefill = "selection"`, like `rewrite`, starts a new note with the 
 `require("annotate").restore(opts)` lists the archives of the repository, newest first, with their time, note count and notes per type, previewing each one as the export markdown. Choosing one restores it and removes it from the archive.
 
 - An empty store takes the archive as it is.
-- Otherwise it asks whether to merge or replace, `opts.mode = "merge" | "replace"` answers up front. Merge appends the notes the store does not have yet, replace archives the store first so nothing is lost.
+- Otherwise the current notes are archived first, so nothing is lost, and the archive replaces them. `opts.mode = "merge"` appends the notes of the archive the store does not have yet instead.
 
 In the snacks.nvim picker, `restore_delete` permanently deletes the selected archives and keeps the picker open, `restore_clear` permanently deletes every archive of the repository and closes it. Both confirm unless `picker.force.delete` or `picker.force.restore_clear` is set. `require("annotate").clear_archive({ force = true })` does the same as `restore_clear` outside the picker.
 
