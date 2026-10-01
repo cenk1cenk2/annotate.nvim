@@ -80,6 +80,34 @@ T["an explicit type wins over default_type"] = function()
   eq(opened.type, "question")
 end
 
+T["add_with_type stores the chosen type on the visual selection"] = function()
+  require("annotate").setup()
+  local prompts = answer({ "Bug" })
+  input.open = function(opts, callback)
+    opened = opts
+    callback(opts.type, "chosen")
+  end
+
+  vim.api.nvim_feedkeys("Vj", "nx!", false)
+  eq(vim.fn.mode(), "V")
+  api.add_with_type()
+
+  eq(prompts, { "Annotation type" })
+  eq(opened.type, "bug")
+  local added = store.load(true)[1]
+  eq({ added.type, added.line, added.line_end, added.text }, { "bug", 1, 2, "chosen" })
+end
+
+T["add_with_type does nothing when the chooser is cancelled"] = function()
+  require("annotate").setup()
+  answer({ "missing" })
+
+  api.add_with_type()
+
+  eq(opened, nil)
+  eq(#store.load(true), 0)
+end
+
 T["edit chooses between overlapping annotations"] = function()
   require("annotate").setup()
   store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })

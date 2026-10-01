@@ -7,6 +7,9 @@ local subcommands = {
   add = function(cmd)
     require("annotate").add(cmd.range > 0 and { line1 = cmd.line1, line2 = cmd.line2 } or nil)
   end,
+  ["add-type"] = function(cmd)
+    require("annotate").add_with_type(cmd.range > 0 and { line1 = cmd.line1, line2 = cmd.line2 } or nil)
+  end,
   file = function()
     require("annotate").add_file()
   end,

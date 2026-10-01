@@ -39,6 +39,14 @@ return {
       desc = "Annotate line or selection",
     },
     {
+      "<leader>at",
+      function()
+        require("annotate").add_with_type()
+      end,
+      mode = { "n", "v" },
+      desc = "Annotate line or selection with a chosen type",
+    },
+    {
       "<leader>af",
       function()
         require("annotate").add_file()
@@ -445,6 +453,7 @@ require("annotate").setup({
 | Subcommand | Action |
 | --- | --- |
 | `add` | Annotate the current line, or the given range with `:'<,'>Annotate add`. |
+| `add-type` | Like `add`, choosing the type from a list first, showing each type's prompt. |
 | `file` | Annotate the current file as a whole. |
 | `edit` | Edit the note under the cursor. |
 | `show` | Show the notes under the cursor in a float. |

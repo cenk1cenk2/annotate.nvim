@@ -112,11 +112,10 @@ local function create(location, opts)
   end)
 end
 
---- Annotates the current line, the visual selection, or the given line range.
----@param opts? { type?: string, line1?: integer, line2?: integer }
-function M.add(opts)
-  opts = opts or {}
-
+--- Location of the given line range, the visual selection, or the current line.
+---@param opts { line1?: integer, line2?: integer }
+---@return annotate.Location?
+local function selection(opts)
   local line1, line2 = opts.line1, opts.line2 or opts.line1
   if not line1 then
     if vim.fn.mode():match("^[vV\22]") then
@@ -128,9 +127,63 @@ function M.add(opts)
     end
   end
 
-  local location = resolve(0, math.min(line1, line2), math.max(line1, line2))
+  return resolve(0, math.min(line1, line2), math.max(line1, line2))
+end
+
+--- Lets the user choose an annotation type, calling back with its key unless cancelled.
+---@param callback fun(key: string)
+local function choose_type(callback)
+  local cfg = config.options.picker
+  local types = config.options.types
+
+  if (cfg.backend or (pcall(require, "snacks") and "snacks" or "select")) == "select" then
+    return vim.ui.select(types, {
+      prompt = "Annotation type",
+      format_item = function(t)
+        return ("%s %s"):format(t.icon, t.name)
+      end,
+    }, function(t)
+      if t then
+        callback(t.key)
+      end
+    end)
+  end
+
+  require("snacks").picker.pick({
+    title = "Annotation type",
+    items = vim.tbl_map(function(t)
+      return { text = ("%s %s"):format(t.icon, t.name), key = t.key, preview = { text = t.prompt } }
+    end, types),
+    format = "text",
+    preview = "preview",
+    confirm = function(picker, item)
+      picker:close()
+      if item then
+        callback(item.key)
+      end
+    end,
+  })
+end
+
+--- Annotates the current line, the visual selection, or the given line range.
+---@param opts? { type?: string, line1?: integer, line2?: integer }
+function M.add(opts)
+  opts = opts or {}
+
+  local location = selection(opts)
   if location then
     create(location, opts)
+  end
+end
+
+--- Like `add`, choosing the annotation type before writing the note.
+---@param opts? { line1?: integer, line2?: integer }
+function M.add_with_type(opts)
+  local location = selection(opts or {})
+  if location then
+    choose_type(function(key)
+      create(location, { type = key })
+    end)
   end
 end
 
