@@ -116,6 +116,38 @@ function M.edit()
   end)
 end
 
+---@param prompt string
+---@param callback fun()
+local function confirm(prompt, callback)
+  vim.ui.select({ "Yes", "No" }, { prompt = prompt }, function(choice)
+    if choice == "Yes" then
+      callback()
+    end
+  end)
+end
+
+--- Deletes the annotations, asking first when `confirm_delete` is set.
+---@param annotations annotate.Annotation[]
+---@param callback fun()
+local function remove(annotations, callback)
+  local function delete()
+    for _, annotation in ipairs(annotations) do
+      store.delete(annotation.id)
+    end
+    callback()
+  end
+
+  if not config.options.confirm_delete then
+    return delete()
+  end
+
+  confirm(
+    #annotations == 1 and ("Delete %s annotation: %s?"):format(marks.type(annotations[1]).name, vim.split(annotations[1].text, "\n", { plain = true })[1])
+      or ("Delete %d annotations?"):format(#annotations),
+    delete
+  )
+end
+
 --- Deletes the annotation under the cursor after confirmation.
 function M.delete()
   local annotation = under_cursor()
@@ -123,22 +155,7 @@ function M.delete()
     return
   end
 
-  if not config.options.confirm_delete then
-    store.delete(annotation.id)
-
-    return marks.refresh()
-  end
-
-  vim.ui.select({ "Yes", "No" }, {
-    prompt = ("Delete %s annotation: %s?"):format(marks.type(annotation).name, vim.split(annotation.text, "\n", { plain = true })[1]),
-  }, function(choice)
-    if choice ~= "Yes" then
-      return
-    end
-
-    store.delete(annotation.id)
-    marks.refresh()
-  end)
+  remove({ annotation }, marks.refresh)
 end
 
 ---@param forward boolean
@@ -209,16 +226,32 @@ function M.pick()
     end)
   end
 
+  local actions = {}
+  local keys = {}
+  for name, key in pairs(cfg.keys) do
+    if key then
+      actions["annotate_" .. name] = M.actions[name]
+      keys[key] = { "annotate_" .. name, mode = { "i", "n" } }
+    end
+  end
+
   require("snacks").picker.pick({
     title = cfg.title,
-    items = vim.tbl_map(function(annotation)
-      return {
-        text = describe(annotation),
-        file = vim.fs.joinpath(r, annotation.file),
-        pos = { math.max(annotation.line, 1), 0 },
-        annotation = annotation,
-      }
-    end, annotations),
+    finder = function()
+      return vim.tbl_map(function(annotation)
+        return {
+          text = describe(annotation),
+          file = vim.fs.joinpath(r, annotation.file),
+          pos = { math.max(annotation.line, 1), 0 },
+          annotation = annotation,
+        }
+      end, store.all())
+    end,
+    actions = actions,
+    win = {
+      input = { keys = keys },
+      list = { keys = keys },
+    },
     format = "text",
     preview = "file",
     confirm = function(picker, item)
@@ -229,6 +262,68 @@ function M.pick()
     end,
   })
 end
+
+--- Picker actions on the selected annotations, in the shape snacks.nvim takes them.
+---@type table<string, { desc: string, action: fun(picker: snacks.Picker, item?: snacks.picker.Item) }>
+M.actions = {
+  edit = {
+    desc = "Edit annotation",
+    action = function(picker, item)
+      if not item then
+        return
+      end
+
+      input.open({ type = item.annotation.type, text = item.annotation.text }, function(type_key, text)
+        if not type_key then
+          return
+        end
+
+        store.update(item.annotation.id, { type = type_key, text = text })
+        marks.refresh()
+        picker:refresh()
+      end)
+    end,
+  },
+  delete = {
+    desc = "Delete annotations",
+    action = function(picker)
+      local annotations = vim.tbl_map(function(item)
+        return item.annotation
+      end, picker:selected({ fallback = true }))
+      if #annotations == 0 then
+        return
+      end
+
+      remove(annotations, function()
+        marks.refresh()
+        picker:refresh()
+      end)
+    end,
+  },
+  delete_all = {
+    desc = "Archive and clear all annotations",
+    action = function(picker)
+      confirm("Archive and clear all annotations?", function()
+        picker:close()
+        M.clear()
+      end)
+    end,
+  },
+  type = {
+    desc = "Cycle annotation type",
+    action = function(picker)
+      local types = config.options.types
+
+      for _, item in ipairs(picker:selected({ fallback = true })) do
+        local _, index = config.type(item.annotation.type)
+        store.update(item.annotation.id, { type = types[(index or 0) % #types + 1].key })
+      end
+
+      marks.refresh()
+      picker:refresh()
+    end,
+  },
+}
 
 --- Sends the annotations of the repository to the quickfix list.
 function M.quickfix()

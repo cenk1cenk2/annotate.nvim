@@ -38,9 +38,16 @@ local M = {}
 ---@field blend number
 ---@field priority integer
 
+---@class annotate.PickerKeys
+---@field edit string|false
+---@field delete string|false
+---@field delete_all string|false
+---@field type string|false
+
 ---@class annotate.PickerConfig
 ---@field backend? "snacks"|"select" nil picks snacks when available
 ---@field title string
+---@field keys annotate.PickerKeys
 
 ---@class annotate.QuickfixConfig
 ---@field title string
@@ -169,6 +176,12 @@ local defaults = {
   picker = {
     backend = nil,
     title = "Annotations",
+    keys = {
+      edit = "<C-e>",
+      delete = "<C-d>",
+      delete_all = "<C-x>",
+      type = "<C-t>",
+    },
   },
   quickfix = {
     title = "annotate",

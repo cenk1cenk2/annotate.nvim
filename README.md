@@ -222,6 +222,13 @@ require("annotate").setup({
     -- "snacks" | "select", nil uses snacks.nvim when available
     backend = nil,
     title = "Annotations",
+    -- actions on the selected notes in the snacks.nvim picker, false disables one
+    keys = {
+      edit = "<C-e>",
+      delete = "<C-d>",
+      delete_all = "<C-x>",
+      type = "<C-t>",
+    },
   },
   quickfix = {
     title = "annotate",
@@ -269,6 +276,15 @@ The input is a floating snacks.nvim window with markdown highlighting. The title
 - `cycle` advances through the types in the configured order, in insert and normal mode.
 - `submit` saves the note, in insert and normal mode. An empty note is discarded.
 - `cancel` closes the window without saving, in normal mode.
+
+### Picker
+
+`<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. The `select` backend has no actions.
+
+- `edit` opens the input on the note and updates it in place.
+- `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set.
+- `delete_all` archives and clears every note after confirmation, like `clear`, and closes the picker.
+- `type` moves the selected notes to the next type in the configured order.
 
 ## Sources
 
