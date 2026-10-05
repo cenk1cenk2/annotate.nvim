@@ -56,11 +56,25 @@ return {
       desc = "Annotate file",
     },
     {
+      "<leader>aF",
+      function()
+        require("annotate").add_file_with_type()
+      end,
+      desc = "Annotate file with a chosen type",
+    },
+    {
       "<leader>ag",
       function()
         require("annotate").add_repository()
       end,
       desc = "Annotate the repository",
+    },
+    {
+      "<leader>aG",
+      function()
+        require("annotate").add_repository_with_type()
+      end,
+      desc = "Annotate the repository with a chosen type",
     },
     {
       "<leader>ae",
@@ -263,9 +277,11 @@ require("annotate").setup({
     line_highlight = true,
     -- summary at the end of the line, or above the first line for whole-file notes
     virtual_text = true,
-    -- text of the summary
+    -- text of the summary, led by `file` for whole-file notes and the line range for multi-line ones
     virtual_text_format = function(annotation, t)
-      return ("%s %s: %s"):format(t.icon, t.name, vim.split(annotation.text, "\n", { plain = true })[1])
+      local scope = annotation.line == 0 and "file" or annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end)
+
+      return ("%s%s %s: %s"):format(scope and scope .. "  " or "", t.icon, t.name, vim.split(annotation.text, "\n", { plain = true })[1])
     end,
     -- share of the type color mixed into the Normal background for the line highlight
     blend = 0.15,
@@ -657,7 +673,9 @@ sources = {
 | `add` | Annotate the current line, or the given range with `:'<,'>Annotate add`. |
 | `add-type` | Like `add`, choosing the type from a list first, showing each type's prompt. |
 | `file` | Annotate the current file as a whole. |
+| `file-type` | Like `file`, choosing the type from a list first. |
 | `repository` | Add a note about the repository as a whole, attached to no file, like a general comment on a pull request. |
+| `repository-type` | Like `repository`, choosing the type from a list first. |
 | `edit` | Edit the note under the cursor. |
 | `show` | Show the notes under the cursor in a float. |
 | `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |

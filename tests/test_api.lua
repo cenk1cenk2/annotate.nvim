@@ -117,6 +117,35 @@ T["annotates a file outside a git repository"] = function()
   eq({ added.file, added.line, added.text }, { "b.lua", 1, "outside" })
 end
 
+T["add_file_with_type stores the chosen type on the whole file"] = function()
+  require("annotate").setup()
+  local prompts = answer({ "Question" })
+  input.open = function(opts, callback)
+    opened = opts
+    callback(opts.type, "file note")
+  end
+
+  api.add_file_with_type()
+
+  eq(prompts, { "Annotation type" })
+  local added = store.load(true)[1]
+  eq({ added.type, added.line, added.text }, { "question", 0, "file note" })
+end
+
+T["add_repository_with_type stores the chosen type attached to no file"] = function()
+  require("annotate").setup()
+  local prompts = answer({ "Praise" })
+  input.open = function(opts, callback)
+    callback(opts.type, "repo note")
+  end
+
+  api.add_repository_with_type()
+
+  eq(prompts, { "Annotation type" })
+  local added = store.load(true)[1]
+  eq({ added.type, added.file, added.line, added.text }, { "praise", nil, 0, "repo note" })
+end
+
 T["add_with_type does nothing when the chooser is cancelled"] = function()
   require("annotate").setup()
   answer({ "missing" })

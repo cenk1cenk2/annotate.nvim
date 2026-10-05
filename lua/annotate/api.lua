@@ -188,10 +188,27 @@ function M.add_file(opts)
   end
 end
 
+--- Like `add_file`, choosing the annotation type before writing the note.
+function M.add_file_with_type()
+  local location = resolve(0, 0, 0)
+  if location then
+    choose_type(function(key)
+      create(location, { type = key })
+    end)
+  end
+end
+
 --- Adds a note about the repository as a whole, attached to no file.
 ---@param opts? { type?: string }
 function M.add_repository(opts)
   create({ line = 0 }, opts or {})
+end
+
+--- Like `add_repository`, choosing the annotation type before writing the note.
+function M.add_repository_with_type()
+  choose_type(function(key)
+    create({ line = 0 }, { type = key })
+  end)
 end
 
 --- Edits the annotation under the cursor.

@@ -27,6 +27,23 @@ T["renders a sign and virtual text"] = function()
   eq(extmarks[1][4].virt_text[1][1]:find("Bug: broken", 1, true) ~= nil, true)
 end
 
+T["leads the virtual text of a range with its lines"] = function()
+  store.add({ file = "a.lua", line = 2, line_end = 4, type = "bug", text = "broken" })
+  marks.render(0)
+
+  local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
+  eq(vim.startswith(extmarks[1][4].virt_text[1][1], "2-4  "), true)
+end
+
+T["shows a whole-file note above the first line led by file"] = function()
+  store.add({ file = "a.lua", line = 0, type = "bug", text = "everything" })
+  marks.render(0)
+
+  local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
+  eq(extmarks[1][4].virt_lines_above, true)
+  eq(vim.startswith(extmarks[1][4].virt_lines[1][1][1], "file  "), true)
+end
+
 T["writes moved lines back to the store on write"] = function()
   local single = store.add({ file = "a.lua", line = 2, type = "bug", text = "single" })
   local range = store.add({ file = "a.lua", line = 3, line_end = 4, type = "suggestion", text = "range" })
