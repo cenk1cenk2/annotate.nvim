@@ -266,7 +266,12 @@ function M.plan(annotations, target, legend)
   return vim.tbl_map(function(annotation)
     local t = require("annotate.marks").type(annotation)
     local location = export.location(annotation)
-    local item = { annotation = annotation, location = location, body = config.options.external.body(annotation, t, location, legend == true), rewrite = t.prefill == "selection" }
+    local item = {
+      annotation = annotation,
+      location = location,
+      body = config.options.external.body(annotation, t, location, legend == true, require("annotate.marks").reach(annotation)),
+      rewrite = t.prefill == "selection",
+    }
 
     if annotation.id == M.LEGEND then
       return vim.tbl_extend("force", item, { kind = "repository", body = annotation.text, legend = true, rewrite = false })
@@ -527,8 +532,9 @@ function M.legend(annotations)
   local cfg = config.options.external
   local lines = { cfg.legend_prompt, "" }
   for _, section in ipairs(require("annotate.export").sections(annotations)) do
-    local t = section.type
-    table.insert(lines, t.external.prompt ~= "" and ("- **[%s]**: %s"):format(t.name:upper(), t.external.prompt) or ("- **[%s]**"):format(t.name:upper()))
+    local label = ("[%s] (%s)"):format(section.type.name:upper(), section.reach)
+    local prompt = config.prompt(section.type, "external", section.reach)
+    table.insert(lines, prompt ~= "" and ("- **%s**: %s"):format(label, prompt) or ("- **%s**"):format(label))
   end
 
   return { id = M.LEGEND, type = M.LEGEND, line = 0, created_at = 0, text = table.concat(lines, "\n"), posted = store.legend.posted }
@@ -708,7 +714,7 @@ function M.summary(publisher, target, items, skipped, submit, legend, verdicts)
     if index > 1 then
       vim.list_extend(lines, { "", cfg.separator })
     end
-    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(section.type)) })
+    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(section.type, section.reach)) })
 
     for _, annotation in ipairs(section.annotations) do
       vim.list_extend(lines, { "", cfg.heading(annotation, section.type, export.location(annotation)), "" })

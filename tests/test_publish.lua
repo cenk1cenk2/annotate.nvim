@@ -293,7 +293,7 @@ local T = MiniTest.new_set({
 ---@param fields table
 ---@return annotate.Annotation
 local function add(fields)
-  return store.add(vim.tbl_extend("force", { type = "bug", text = "broken" }, fields))
+  return store.add(vim.tbl_extend("force", { type = "report", text = "broken" }, fields))
 end
 
 local target = {
@@ -468,12 +468,12 @@ T["the legend labels the bodies and lists the external prompts of the used types
   local forge = gitlab()
   stub(forge)
   add({ file = "a.lua", line = 2 })
-  add({ file = "a.lua", line = 4, type = "question", text = "why?" })
+  add({ file = "a.lua", line = 4, type = "discuss", text = "why?" })
   local legend = table.concat({
     config.options.external.legend_prompt,
     "",
-    "- **[QUESTION]**: " .. config.type("question").external.prompt,
-    "- **[BUG]**: " .. config.type("bug").external.prompt,
+    "- **[DISCUSS] (here)**: " .. config.type("discuss").external.prompt,
+    "- **[REPORT] (here)**: " .. config.type("report").external.prompt,
   }, "\n")
 
   publishers.publish({ legend = true })
@@ -482,9 +482,9 @@ T["the legend labels the bodies and lists the external prompts of the used types
     vim.tbl_map(function(call)
       return call.body.note
     end, requests("POST", "draft_notes$")),
-    { legend, "**[BUG]**\n\nbroken", "**[QUESTION]**\n\nwhy?" }
+    { legend, "**[REPORT] (here)**\n\nbroken", "**[DISCUSS] (here)**\n\nwhy?" }
   )
-  eq(legend:find(config.type("bug").export.prompt, 1, true), nil)
+  eq(legend:find(config.type("report").export.prompt, 1, true), nil)
   store.load(true)
   eq({ store.legend.posted[1].target, store.legend.posted[1].state, store.legend.posted[1].id }, { 5, "draft", 101 })
 
@@ -513,7 +513,7 @@ T["external.legend turns the legend on and GitHub queues it as its own conversat
     vim.tbl_map(function(comment)
       return comment.body
     end, forge.conversation),
-    { "KINDS\n\n- **[BUG]**: " .. config.type("bug").external.prompt, "**[BUG]**\n\noverall" }
+    { "KINDS\n\n- **[REPORT] (here)**: " .. config.type("report").external.prompt, "**[REPORT] (here)**\n\noverall" }
   )
   eq(#requests("POST", "/reviews$"), 0)
   store.load(true)
@@ -540,12 +540,12 @@ T["the summary shows the legend and its text"] = function()
       "",
       "KINDS",
       "",
-      "- **[BUG]**: " .. config.type("bug").external.prompt,
+      "- **[REPORT] (here)**: " .. config.type("report").external.prompt,
     }, "\n"),
     1,
     true
   ) ~= nil, true)
-  eq(prompts[1]:find("**[BUG]**\n\nbroken", 1, true) ~= nil, true)
+  eq(prompts[1]:find("**[REPORT] (here)**\n\nbroken", 1, true) ~= nil, true)
 end
 
 T["GitLab entries record the forge ids and the posted body"] = function()
@@ -613,7 +613,7 @@ T["GitHub records the forge ids and updates changed review and conversation comm
   stub(forge)
   local inline = add({ file = "a.lua", line = 2 })
   local overall = add({ line = 0, text = "overall" })
-  add({ line = 0, type = "question", text = "kept" })
+  add({ line = 0, type = "discuss", text = "kept" })
 
   publishers.publish({ publish = true, verdict = "comment", note = "" })
   store.load(true)
@@ -1093,9 +1093,9 @@ T["the summary lists the target, each destination and the totals"] = function()
   stub(gitlab())
   config.setup({ external = { summary = true } })
   add({ file = "a.lua", line = 4 })
-  add({ file = "a.lua", line = 10, type = "question" })
+  add({ file = "a.lua", line = 10, type = "discuss" })
   publishers.publish({ force = true })
-  add({ line = 0, type = "question", text = "overall" })
+  add({ line = 0, type = "discuss", text = "overall" })
   local prompts = {}
   answer({ "Cancel" }, prompts)
 
@@ -1124,7 +1124,7 @@ T["the summary lists the target, each destination and the totals"] = function()
       "- Skipped: 2 (already draft or published)",
       "- Legend: off",
       "",
-      "## [QUESTION]",
+      "## [DISCUSS] (here)",
       "",
       "### repository",
       "",
@@ -1139,7 +1139,7 @@ T["the summary lists the target, each destination and the totals"] = function()
       "",
       "---",
       "",
-      "## [BUG]",
+      "## [REPORT] (here)",
       "",
       "### `a.lua:4`",
       "",

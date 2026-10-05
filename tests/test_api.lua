@@ -63,28 +63,28 @@ T["starts the input on the first type"] = function()
 
   api.add()
 
-  eq(opened.type, "issue")
+  eq(opened.type, "apply")
 end
 
 T["starts the input on default_type"] = function()
-  require("annotate").setup({ default_type = "bug" })
+  require("annotate").setup({ default_type = "report" })
 
   api.add()
 
-  eq(opened.type, "bug")
+  eq(opened.type, "report")
 end
 
 T["an explicit type wins over default_type"] = function()
-  require("annotate").setup({ default_type = "bug" })
+  require("annotate").setup({ default_type = "report" })
 
-  api.add_file({ type = "question" })
+  api.add_file({ type = "discuss" })
 
-  eq(opened.type, "question")
+  eq(opened.type, "discuss")
 end
 
 T["add_with_type stores the chosen type on the visual selection"] = function()
   require("annotate").setup()
-  local prompts = answer({ "Bug" })
+  local prompts = answer({ "Report" })
   input.open = function(opts, callback)
     opened = opts
     callback(opts.type, "chosen")
@@ -95,9 +95,9 @@ T["add_with_type stores the chosen type on the visual selection"] = function()
   api.add_with_type()
 
   eq(prompts, { "Annotation type" })
-  eq(opened.type, "bug")
+  eq(opened.type, "report")
   local added = store.load(true)[1]
-  eq({ added.type, added.line, added.line_end, added.text }, { "bug", 1, 2, "chosen" })
+  eq({ added.type, added.line, added.line_end, added.text }, { "report", 1, 2, "chosen" })
 end
 
 T["annotates a file outside a git repository"] = function()
@@ -119,7 +119,7 @@ end
 
 T["add_file_with_type stores the chosen type on the whole file"] = function()
   require("annotate").setup()
-  local prompts = answer({ "Question" })
+  local prompts = answer({ "Discuss" })
   input.open = function(opts, callback)
     opened = opts
     callback(opts.type, "file note")
@@ -129,12 +129,12 @@ T["add_file_with_type stores the chosen type on the whole file"] = function()
 
   eq(prompts, { "Annotation type" })
   local added = store.load(true)[1]
-  eq({ added.type, added.line, added.text }, { "question", 0, "file note" })
+  eq({ added.type, added.line, added.text }, { "discuss", 0, "file note" })
 end
 
 T["add_repository_with_type stores the chosen type attached to no file"] = function()
   require("annotate").setup()
-  local prompts = answer({ "Praise" })
+  local prompts = answer({ "Keep" })
   input.open = function(opts, callback)
     callback(opts.type, "repo note")
   end
@@ -143,7 +143,7 @@ T["add_repository_with_type stores the chosen type attached to no file"] = funct
 
   eq(prompts, { "Annotation type" })
   local added = store.load(true)[1]
-  eq({ added.type, added.file, added.line, added.text }, { "praise", nil, 0, "repo note" })
+  eq({ added.type, added.file, added.line, added.text }, { "keep", nil, 0, "repo note" })
 end
 
 T["add_with_type does nothing when the chooser is cancelled"] = function()
@@ -158,28 +158,28 @@ end
 
 T["edit chooses between overlapping annotations"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })
-  local single = store.add({ file = "a.lua", line = 1, type = "question", text = "single" })
-  local prompts = answer({ "Question: single (a.lua:1)" })
+  store.add({ file = "a.lua", line = 1, line_end = 2, type = "report", text = "range" })
+  local single = store.add({ file = "a.lua", line = 1, type = "discuss", text = "single" })
+  local prompts = answer({ "Discuss: single (a.lua:1)" })
   local edit
   input.open = function(opts, callback)
     edit = opts
-    callback("praise", "changed")
+    callback("keep", "changed")
   end
 
   api.edit()
 
   eq(prompts, { "Annotations" })
-  eq(edit, { type = "question", text = "single" })
+  eq(edit, { type = "discuss", text = "single" })
   eq(store.get(single.id).text, "changed")
   eq(texts(), { "range", "changed" })
 end
 
 T["delete removes only the chosen overlapping annotation"] = function()
   require("annotate").setup({ confirm_delete = false })
-  store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })
-  store.add({ file = "a.lua", line = 1, type = "question", text = "single" })
-  answer({ "Bug: range (a.lua:1-2)" })
+  store.add({ file = "a.lua", line = 1, line_end = 2, type = "report", text = "range" })
+  store.add({ file = "a.lua", line = 1, type = "discuss", text = "single" })
+  answer({ "Report: range (a.lua:1-2)" })
 
   api.delete()
 
@@ -188,8 +188,8 @@ end
 
 T["delete removes all of the overlapping annotations"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, line_end = 2, type = "bug", text = "range" })
-  store.add({ file = "a.lua", line = 1, type = "question", text = "single" })
+  store.add({ file = "a.lua", line = 1, line_end = 2, type = "report", text = "range" })
+  store.add({ file = "a.lua", line = 1, type = "discuss", text = "single" })
   store.add({ file = "a.lua", line = 0, type = "context", text = "file" })
   local prompts = answer({ "All of them", "Yes" })
 
@@ -201,7 +201,7 @@ end
 
 T["delete confirms unless forced"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
   local prompts = answer({ "No" })
 
   api.delete()
@@ -219,7 +219,7 @@ end
 T["delete falls back to the whole-file annotation on line 1"] = function()
   require("annotate").setup({ confirm_delete = false })
   store.add({ file = "a.lua", line = 0, type = "context", text = "file" })
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "two" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "two" })
 
   api.delete()
 
@@ -228,7 +228,7 @@ end
 
 T["show opens a float with the annotation"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "broken\nmore" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "broken\nmore" })
 
   api.show()
 
@@ -237,13 +237,13 @@ T["show opens a float with the annotation"] = function()
   end, vim.api.nvim_list_wins())
   eq(#floats, 1)
   local content = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(floats[1]), 0, -1, false), "\n")
-  eq(content:find("Bug", 1, true) ~= nil, true)
+  eq(content:find("Report", 1, true) ~= nil, true)
   eq(content:find("broken\nmore", 1, true) ~= nil, true)
 end
 
 T["show reports when there is no annotation under the cursor"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "elsewhere" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "elsewhere" })
   local messages = {}
   vim.notify = function(message)
     table.insert(messages, message)
@@ -256,11 +256,11 @@ end
 
 T["restore picks an archive by its label"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
-  store.add({ file = "a.lua", line = 2, type = "issue", text = "two" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  store.add({ file = "a.lua", line = 2, type = "apply", text = "two" })
   store.archive()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
-  local prompts = answer({ " · 2 notes · 1 issue, 1 bug" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  local prompts = answer({ " · 2 notes · 1 apply, 1 report" })
 
   api.restore({ mode = "merge" })
 
@@ -270,7 +270,7 @@ end
 
 T["clear_archive removes only the archives of the repository"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
   store.archive()
   local other = vim.fs.joinpath(store.archive_dir(), "0000000000000000-20200101-000000.json")
   vim.fn.writefile({ "{}" }, other)
@@ -299,9 +299,9 @@ end
 
 T["delete action removes every selected annotation"] = function()
   require("annotate").setup({ confirm_delete = false })
-  local first = store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
-  local second = store.add({ file = "a.lua", line = 2, type = "bug", text = "two" })
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "kept" })
+  local first = store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  local second = store.add({ file = "a.lua", line = 2, type = "report", text = "two" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "kept" })
   local p = picker({ first, second })
 
   api.actions.delete.action(p)
@@ -318,7 +318,7 @@ end
 T["delete action keeps the annotations when not confirmed"] = function()
   require("annotate").setup()
   answer({ "No" })
-  local added = store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  local added = store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
   local p = picker({ added })
 
   api.actions.delete.action(p)
@@ -329,24 +329,24 @@ end
 
 T["type action cycles to the next type and wraps around"] = function()
   require("annotate").setup()
-  local bug = store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
-  local praise = store.add({ file = "a.lua", line = 2, type = "praise", text = "two" })
-  local p = picker({ bug, praise })
+  local report = store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  local context = store.add({ file = "a.lua", line = 2, type = "context", text = "two" })
+  local p = picker({ report, context })
 
   api.actions.type.action(p)
 
   store.load(true)
-  eq(store.get(bug.id).type, "context")
-  eq(store.get(praise.id).type, "issue")
+  eq(store.get(report.id).type, "keep")
+  eq(store.get(context.id).type, "apply")
   eq(p.refreshed, 1)
 end
 
 T["restore into a non-empty store archives it first and replaces it"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "archived" })
   store.archive()
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "current" })
-  local prompts = answer({ " · 1 notes · 1 bug" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "current" })
+  local prompts = answer({ " · 1 notes · 1 report" })
 
   api.restore()
 
@@ -358,10 +358,10 @@ end
 
 T["restore merges only when asked to"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "archived" })
   store.archive()
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "current" })
-  answer({ " · 1 notes · 1 bug" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "current" })
+  answer({ " · 1 notes · 1 report" })
 
   api.restore({ mode = "merge" })
 
@@ -389,9 +389,9 @@ end
 
 T["split keeps the selected notes and archives a snapshot of all of them"] = function()
   require("annotate").setup({ picker = { force = { split = true } } })
-  local kept = store.add({ file = "a.lua", line = 1, type = "bug", text = "kept" })
+  local kept = store.add({ file = "a.lua", line = 1, type = "report", text = "kept" })
   store.update(kept.id, { posted = { { platform = "gitlab", target = 5, id = 1, state = "draft" } } })
-  local other = store.add({ file = "a.lua", line = 2, type = "bug", text = "other" })
+  local other = store.add({ file = "a.lua", line = 2, type = "report", text = "other" })
   local messages = {}
   vim.notify = function(message)
     table.insert(messages, message)
@@ -415,8 +415,8 @@ end
 
 T["split without a selection keeps the note under the cursor after confirmation"] = function()
   require("annotate").setup()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
-  local current = store.add({ file = "a.lua", line = 2, type = "bug", text = "current" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "archived" })
+  local current = store.add({ file = "a.lua", line = 2, type = "report", text = "current" })
   local prompts = answer({ "Yes" })
 
   api.actions.split.action(selecting({}, current))
@@ -427,7 +427,7 @@ end
 
 T["add_repository stores a note attached to no file"] = function()
   input.open = function(_, callback)
-    callback("general", "about everything")
+    callback("consider", "about everything")
   end
 
   api.add_repository()
@@ -445,25 +445,25 @@ end
 
 T["picker rows show the type, location, first line and where the note was posted"] = function()
   require("annotate").setup()
-  local range = store.add({ type = "bug", file = "a.lua", line = 1, line_end = 2, text = "broken\nmore" })
+  local range = store.add({ type = "report", file = "a.lua", line = 1, line_end = 2, text = "broken\nmore" })
   store.update(range.id, { posted = { posted("draft", "!5"), posted("published", "#1") } })
-  local whole = store.add({ type = "question", file = "a.lua", line = 0, text = "why" })
-  local rev = store.add({ type = "issue", file = "a.lua", line = 2, rev = "abcdef12345", text = "old" })
-  local repository = store.add({ type = "general", line = 0, text = "overall" })
+  local whole = store.add({ type = "discuss", file = "a.lua", line = 0, text = "why" })
+  local rev = store.add({ type = "apply", file = "a.lua", line = 2, rev = "abcdef12345", text = "old" })
+  local repository = store.add({ type = "consider", line = 0, text = "overall" })
   store.update(repository.id, { posted = { posted("queued", "#1") } })
 
   eq(vim.tbl_map(api.describe, { store.get(range.id), whole, rev, store.get(repository.id) }), {
-    require("annotate.config").type("bug").icon .. " Bug  a.lua:1-2  broken  draft !5, published #1",
-    require("annotate.config").type("question").icon .. " Question  a.lua  why",
-    require("annotate.config").type("issue").icon .. " Issue  a.lua:~2 @ abcdef12345  old",
-    require("annotate.config").type("general").icon .. " General  repository  overall  queued #1",
+    require("annotate.config").type("report").icon .. " Report  a.lua:1-2  broken  draft !5, published #1",
+    require("annotate.config").type("discuss").icon .. " Discuss  a.lua  why",
+    require("annotate.config").type("apply").icon .. " Apply  a.lua:~2 @ abcdef12345  old",
+    require("annotate.config").type("consider").icon .. " Consider  repository  overall  queued #1",
   })
 end
 
 T["quickfix lists every note, repository notes without a file"] = function()
-  local pinned = store.add({ type = "bug", file = "a.lua", line = 2, text = "pinned" })
+  local pinned = store.add({ type = "report", file = "a.lua", line = 2, text = "pinned" })
   store.update(pinned.id, { posted = { posted("draft", "!5") } })
-  local repository = store.add({ type = "general", line = 0, text = "repository\nmore" })
+  local repository = store.add({ type = "consider", line = 0, text = "repository\nmore" })
   require("annotate").setup({ quickfix = { open = false } })
 
   api.quickfix()
@@ -474,8 +474,8 @@ T["quickfix lists every note, repository notes without a file"] = function()
       return { item.text, item.valid, item.lnum, item.type, item.bufnr ~= 0, item.user_data }
     end, items),
     {
-      { "[BUG] a.lua:2  pinned  (draft !5)", 1, 2, "B", true, { id = pinned.id, type = "bug", posted = "draft !5" } },
-      { "[GENERAL] repository  repository", 0, 0, "G", false, { id = repository.id, type = "general" } },
+      { "[REPORT] a.lua:2  pinned  (draft !5)", 1, 2, "R", true, { id = pinned.id, type = "report", reach = "here", posted = "draft !5" } },
+      { "[CONSIDER] repository  repository", 0, 0, "C", false, { id = repository.id, type = "consider", reach = "here" } },
     }
   )
 end
@@ -561,6 +561,80 @@ T["edit keeps the text of a rewrite"] = function()
   api.edit()
 
   eq(written(fake), { "```lua", "TWO", "```" })
+end
+
+T["the reach key cycles the reaches of the type and submits the chosen one"] = function()
+  local fake = rewriting()
+  local keys = require("annotate.config").options.input.keys
+
+  api.add()
+  eq(fake.win.opts.footer:find("[here] · pattern", 1, true) ~= nil, true)
+
+  H.press(fake, keys.reach)
+  eq(vim.api.nvim_win_get_config(fake.win.win).footer[1][1]:find("here · [pattern]", 1, true) ~= nil, true)
+
+  vim.api.nvim_buf_set_lines(fake.win.buf, 0, -1, false, { "everywhere" })
+  H.press(fake, keys.submit)
+  vim.wait(100, function()
+    return #store.load(true) > 0
+  end)
+
+  local added = store.load(true)[1]
+  eq({ added.type, added.reach, added.text }, { "apply", "pattern", "everywhere" })
+end
+
+T["cycling onto a type without the reach falls back to its default"] = function()
+  local fake = rewriting()
+  local keys = require("annotate.config").options.input.keys
+
+  api.add()
+  H.press(fake, keys.reach)
+  H.press(fake, keys.cycle)
+  vim.api.nvim_buf_set_lines(fake.win.buf, 0, -1, false, { "replacement" })
+  H.press(fake, keys.submit)
+  vim.wait(100, function()
+    return #store.load(true) > 0
+  end)
+
+  local added = store.load(true)[1]
+  eq({ added.type, added.reach }, { "rewrite", nil })
+end
+
+T["the selection key inserts the annotated lines below the cursor"] = function()
+  local fake = rewriting()
+  local keys = require("annotate.config").options.input.keys
+
+  api.add()
+  vim.api.nvim_buf_set_lines(fake.win.buf, 0, -1, false, { "use this:" })
+  H.press(fake, keys.selection)
+
+  eq(written(fake), { "use this:", "```lua", "two", "```" })
+end
+
+T["edit clears a reach set back to the default"] = function()
+  require("annotate").setup()
+  local wide = store.add({ file = "a.lua", line = 1, type = "apply", reach = "pattern", text = "wide" })
+  local edit
+  input.open = function(opts, callback)
+    edit = opts
+    callback("apply", "narrow", nil)
+  end
+
+  api.edit()
+
+  eq(edit.reach, "pattern")
+  store.load(true)
+  eq({ store.get(wide.id).text, store.get(wide.id).reach }, { "narrow", nil })
+end
+
+T["type action drops a reach the next type does not have"] = function()
+  require("annotate").setup()
+  local wide = store.add({ file = "a.lua", line = 1, type = "apply", reach = "pattern", text = "wide" })
+
+  api.actions.type.action(picker({ wide }))
+
+  store.load(true)
+  eq({ store.get(wide.id).type, store.get(wide.id).reach }, { "rewrite", nil })
 end
 
 return T

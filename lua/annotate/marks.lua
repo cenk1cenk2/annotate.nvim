@@ -12,7 +12,15 @@ local store = require("annotate.store")
 ---@param annotation annotate.Annotation
 ---@return annotate.Type
 function M.type(annotation)
-  return config.type(annotation.type) or { key = annotation.type, name = annotation.type, icon = "?", hl = "Comment", export = { prompt = "" }, external = { prompt = "" } }
+  return config.type(annotation.type)
+    or { key = annotation.type, name = annotation.type, icon = "?", hl = "Comment", reaches = { "here" }, export = { prompt = "" }, external = { prompt = "" } }
+end
+
+--- How far the annotation reaches, its type's default when it has no reach of its own.
+---@param annotation annotate.Annotation
+---@return string
+function M.reach(annotation)
+  return annotation.reach or M.type(annotation).reaches[1]
 end
 
 ---@param t annotate.Type

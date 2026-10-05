@@ -161,15 +161,22 @@ require("annotate").setup({
   -- ordered: the first entry is the default type, the order drives cycling in the input and the section order of the export
   types = {
     {
-      key = "issue",
-      name = "Issue",
+      key = "apply",
+      name = "Apply",
       icon = "",
       hl = "Special",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+        prompt = "Make the change the note asks for at this location only. Follow its intent over the literal wording, and leave similar code elsewhere alone.",
+        reach = {
+          pattern = "The note shows one instance of a change I want everywhere. Find every occurrence of the same thing in the repository, apply the change consistently, and list each place you changed.",
+        },
       },
       external = {
-        prompt = "Something here should change. The comment says what and roughly how; please apply it here and wherever the same pattern appears.",
+        prompt = "Please change this as the comment says.",
+        reach = {
+          pattern = "Please change this here and wherever the same pattern appears.",
+        },
       },
     },
     {
@@ -177,61 +184,89 @@ require("annotate").setup({
       name = "Rewrite",
       icon = "",
       hl = "Function",
+      reaches = { "here" },
       export = {
         prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
       },
       external = {
         prompt = "The suggested replacement for these lines; apply it with the suggestion button or adapt it.",
       },
-      -- a new note starts with the annotated lines in a fenced block tagged with the filetype
       prefill = "selection",
     },
     {
-      key = "general",
-      name = "General",
-      icon = "",
-      hl = "DiagnosticInfo",
-      export = {
-        prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
-      },
-      external = {
-        prompt = "A remark about the change as a whole rather than this line alone; it likely applies in other places too.",
-      },
-    },
-    {
-      key = "suggestion",
-      name = "Suggestion",
+      key = "consider",
+      name = "Consider",
       icon = "",
       hl = "DiagnosticWarn",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
+        prompt = "An idea for this spot, not an order. Weigh it against the surrounding code: apply it if it holds up, otherwise say why in a sentence or two. Never skip it silently.",
+        reach = {
+          pattern = "An idea that may fit in many places. Find where it would apply, judge each place on its own, apply it where it holds up, and list both the places you changed and the ones you left, with a reason.",
+        },
       },
       external = {
         prompt = "An idea worth considering, not a requirement; take it or say in the thread why not.",
+        reach = {
+          pattern = "An idea that may fit in other places too; take it where it helps or say in the thread why not.",
+        },
       },
     },
     {
-      key = "question",
-      name = "Question",
+      key = "discuss",
+      name = "Discuss",
       icon = "",
       hl = "DiagnosticHint",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
+        prompt = "A decision for us to settle together. Change no code for it. Give your read, the options with their trade-offs and a recommendation, then wait for my answer.",
+        reach = {
+          pattern = "A decision about something that recurs. Change no code. Find where it occurs, say how widespread it is and how the occurrences differ, give the options and a recommendation, then wait for my answer before touching any of them.",
+        },
       },
       external = {
-        prompt = "A question for the author; please answer in the thread before this merges.",
+        prompt = "A question to settle in the thread before this merges.",
+        reach = {
+          pattern = "A question about something that recurs across the change; let's settle it in the thread before this merges.",
+        },
       },
     },
     {
-      key = "bug",
-      name = "Bug",
-      icon = "",
-      hl = "DiagnosticError",
+      key = "report",
+      name = "Report",
+      icon = "",
+      hl = "DiagnosticInfo",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+        prompt = "Change no code. Find out what the note asks about this location, such as what it does, why it is this way, or what depends on it, and report it.",
+        reach = {
+          pattern = "Change no code. Find every place in the repository like this one and report them as a list, a line on each, noting how they differ.",
+        },
       },
       external = {
-        prompt = "This is, or will cause, a bug, and the comment says how it shows up. Please fix the cause and cover it with a test where you can.",
+        prompt = "Could you explain this in the thread?",
+        reach = {
+          pattern = "Could you list in the thread where else this happens?",
+        },
+      },
+    },
+    {
+      key = "keep",
+      name = "Keep",
+      icon = "",
+      hl = "DiagnosticOk",
+      reaches = { "here", "pattern" },
+      export = {
+        prompt = "This is the style I want. Change nothing here, and follow it in any code you write or touch.",
+        reach = {
+          pattern = "This is the reference style for the repository. Change nothing here; sweep the repository for code that drifts from it, bring that code in line, and list each place you changed.",
+        },
+      },
+      external = {
+        prompt = "Done well; please keep it this way.",
+        reach = {
+          pattern = "Done well; this should be the example for similar code, so please bring other places in line with it.",
+        },
       },
     },
     {
@@ -239,23 +274,12 @@ require("annotate").setup({
       name = "Context",
       icon = "",
       hl = "Comment",
+      reaches = { "here" },
       export = {
-        prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+        prompt = "Background for the other notes: why the code is this way, a constraint, or history. Nothing to do for it by itself; use it while working through the rest.",
       },
       external = {
         prompt = "Background for the other comments; nothing to change for it by itself.",
-      },
-    },
-    {
-      key = "praise",
-      name = "Praise",
-      icon = "",
-      hl = "DiagnosticOk",
-      export = {
-        prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
-      },
-      external = {
-        prompt = "Something done well; keep it and use it as the example for similar code.",
       },
     },
   },
@@ -281,7 +305,13 @@ require("annotate").setup({
     virtual_text_format = function(annotation, t)
       local scope = annotation.line == 0 and "file" or annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end)
 
-      return ("%s%s %s: %s"):format(scope and scope .. "  " or "", t.icon, t.name, vim.split(annotation.text, "\n", { plain = true })[1])
+      return ("%s%s %s%s: %s"):format(
+        scope and scope .. "  " or "",
+        t.icon,
+        t.name,
+        annotation.reach and (" (%s)"):format(annotation.reach) or "",
+        vim.split(annotation.text, "\n", { plain = true })[1]
+      )
     end,
     -- share of the type color mixed into the Normal background for the line highlight
     blend = 0.15,
@@ -294,7 +324,7 @@ require("annotate").setup({
     border = "rounded",
     -- snacks.nvim window position
     position = "float",
-    -- string or fun(type, keys, types, index), re-evaluated when cycling types, truncated on both sides around the current type when it does not fit
+    -- string or fun(type, keys, types, index, reach), re-evaluated when cycling types, truncated on both sides around the current type when it does not fit
     title = function(_, _, types, index)
       local names = {}
       for i, t in ipairs(types) do
@@ -304,9 +334,21 @@ require("annotate").setup({
       return table.concat(names, " · ")
     end,
     title_pos = "center",
-    -- string or fun(type, keys, types, index), evaluated when the window opens
-    footer = function(_, keys)
-      return (" %s/%s cycle  %s submit  %s cancel "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.cancel)
+    -- string or fun(type, keys, types, index, reach), re-evaluated when cycling types or reaches
+    footer = function(t, keys, _, _, reach)
+      local reaches = vim.tbl_map(function(r)
+        return r == reach and #t.reaches > 1 and ("[%s]"):format(r) or r
+      end, t.reaches)
+
+      return (" %s%s  %s/%s cycle  %s selection  %s submit  %s close "):format(
+        table.concat(reaches, " · "),
+        #t.reaches > 1 and ("  %s reach"):format(keys.reach) or "",
+        keys.cycle_prev,
+        keys.cycle,
+        keys.selection,
+        keys.submit,
+        keys.close
+      )
     end,
     footer_pos = "center",
     -- filetype of the input buffer; registered as a treesitter alias of markdown.
@@ -317,6 +359,8 @@ require("annotate").setup({
     keys = {
       cycle = "<C-n>",
       cycle_prev = "<C-p>",
+      reach = "<C-l>",
+      selection = "<C-y>",
       submit = "<C-s>",
       cancel = "q",
       close = "<C-q>",
@@ -375,16 +419,19 @@ require("annotate").setup({
     end,
     -- location shown for notes attached to no file (`add_repository`); export lists them as plain items
     repository = "repository",
+    -- table of reach to what it means, listed under its heading for the reaches in use; false leaves it to the type prompts
+    reach = false,
     -- section headings of the document
     headings = {
       description = "Description",
+      reach = "Reach",
       compared = "Compared",
     },
-    -- line between the type sections
+    -- line between the sections
     separator = "---",
-    -- how a type is named in the document
-    label = function(t)
-      return ("[%s]"):format(t.name:upper())
+    -- fun(type, reach): string, how a type and reach are named in the document
+    label = function(t, reach)
+      return reach and ("[%s] (%s)"):format(t.name:upper(), reach) or ("[%s]"):format(t.name:upper())
     end,
     -- fun(annotation, type, location): string, the heading above each note
     heading = function(annotation, _, location)
@@ -411,11 +458,11 @@ require("annotate").setup({
     },
     -- label each comment with its type and post a legend of the types once per merge or pull request
     legend = false,
-    -- first line of the legend, followed by each used type with its `external.prompt`
+    -- first line of the legend, followed by each used type and reach with its external prompt
     legend_prompt = "Each comment in this review is marked with its kind; here is what each kind asks of you.",
-    -- fun(annotation, type, location, legend): string, the comment posted for a note
-    body = function(annotation, t, _, legend)
-      return legend and ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text) or annotation.text
+    -- fun(annotation, type, location, legend, reach): string, the comment posted for a note
+    body = function(annotation, t, _, legend, reach)
+      return legend and ("**[%s] (%s)**\n\n%s"):format(t.name:upper(), reach, annotation.text) or annotation.text
     end,
   },
 })
@@ -423,17 +470,30 @@ require("annotate").setup({
 
 `types` is a list, so setting it replaces the defaults as a whole.
 
+A type is what the agent should do with a note: `apply` it, `rewrite` the lines with the fenced block, `consider` it, `discuss` it before acting, `report` on it without changing code, `keep` the style it points at, or take it as `context`.
+
+`reaches` says how far a note of the type reaches, the first entry being the default:
+
+- `here` is the location of the note only: its lines, its file for a whole-file note, the repository for a repository note.
+- `pattern` takes the location as one example of something to handle wherever it occurs, like a sweep over the repository for `keep`.
+
+A note stores its reach only when it is not the default of its type. Notes of the types of earlier versions are mapped when the store is read, unless a configured type still has their key: `issue` and `bug` to `apply`, `general` to `apply` with `pattern`, `suggestion` to `consider`, `question` to `discuss` and `praise` to `keep`.
+
 Each type describes itself twice, for two different readers:
 
 - `export.prompt` is written for the agent working through the export: what to do with notes of this kind. It fills the Description section of the export and shows in `show()` and the type chooser.
 - `external.prompt` is written for the people on the merge or pull request: the author and other reviewers. It is only used in the legend posted when publishing with `external.legend`.
 
+`export.reach` and `external.reach` replace the prompt for a reach of the type, so a `pattern` note can ask for a sweep where a `here` note asks for a local change. `:checkhealth annotate` warns about a prompt for a reach the type does not have.
+
 ### Input
 
-The input is a floating snacks.nvim window with markdown highlighting. The title lists every type with the current one in brackets, the footer shows the keys.
+The input is a floating snacks.nvim window with markdown highlighting. The title lists every type with the current one in brackets, the footer shows the reaches of the current type, the current one in brackets, and the keys.
 
 - `cycle` advances through the types in the configured order, in insert and normal mode.
-- `cycle_prev` goes back through the types, in insert and normal mode.
+- `cycle_prev` goes back through the types, in insert and normal mode. Cycling onto a type that does not have the current reach falls back to its default.
+- `reach` cycles through the reaches of the current type, in insert and normal mode.
+- `selection` inserts the annotated lines in a fenced block tagged with the filetype below the cursor, or as the whole note when it is empty, in insert and normal mode.
 - `submit` saves the note, in insert and normal mode. An empty note is discarded.
 - `cancel` closes the window without saving, in normal mode.
 
@@ -441,14 +501,14 @@ A type with `prefill = "selection"`, like `rewrite`, starts a new note with the 
 
 ### Picker
 
-Each row shows the type icon and name, the location (`path:line`, `path:line-end`, `path` for a whole file, `repository`, with `~` and `@ <rev>` for a revision), the first line of the note, and where it was posted, like `draft !5, published #1`.
+Each row shows the type icon and name, the reach when it is not the default of the type, the location (`path:line`, `path:line-end`, `path` for a whole file, `repository`, with `~` and `@ <rev>` for a revision), the first line of the note, and where it was posted, like `draft !5, published #1`.
 
 `<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. The `select` backend has no actions.
 
 - `edit` opens the input on the note and updates it in place.
 - `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set unless `picker.force.delete` is.
 - `delete_all` archives and clears every note after confirmation, skipped with `picker.force.delete_all`, like `clear`, and closes the picker.
-- `type` moves the selected notes to the next type in the configured order.
+- `type` moves the selected notes to the next type in the configured order, dropping a reach the next type does not have.
 - `split` archives every note as a snapshot, then keeps only the selected notes, or the one under the cursor, in the store with their ids and where they were posted, so they start a new session. It confirms unless `picker.force.split` is set, and closes the picker.
 
 `<Tab>` and `<S-Tab>` select notes, as snacks.nvim binds them by default.
@@ -533,21 +593,22 @@ A file is written to `export.dir`, named by `export.filename`, which defaults to
 
 `require("annotate").preview(opts)` shows the same markdown in a floating window without delivering it.
 
-The document has the following shape. Only types with at least one note appear, in the configured order. `Compared` only appears when a note was taken inside a diff view. Each note is a `###` heading carrying its location, followed by its text as free-flowing markdown. Repository notes come first in their section, then file notes sorted by file and line. Notes on a revision are marked with `~` and `@ <rev>`, whole-file notes only show the path.
+The document has the following shape. A section holds the notes of one type and reach, and only sections with at least one note appear, in the configured order of the types and their reaches. Each Description line carries the prompt of that type for that reach. `Compared` only appears when a note was taken inside a diff view. Each note is a `###` heading carrying its location, followed by its text as free-flowing markdown. Repository notes come first in their section, then file notes sorted by file and line. Notes on a revision are marked with `~` and `@ <rev>`, whole-file notes only show the path.
 
 ```markdown
 <export.prompt>
 
 ## Description
 
-- [GENERAL]: <prompt of the general type>
-- [BUG]: <prompt of the bug type>
+- [APPLY] (here): <prompt of the apply type>
+- [APPLY] (pattern): <pattern prompt of the apply type>
+- [DISCUSS] (here): <prompt of the discuss type>
 
 ## Compared
 
 - `a1b2c3d4e5f` .. `LOCAL`
 
-## [GENERAL]
+## [APPLY] (here)
 
 ### repository
 
@@ -559,7 +620,15 @@ Applies to the whole file.
 
 ---
 
-## [BUG]
+## [APPLY] (pattern)
+
+### `lua/a.lua:4`
+
+One instance of something to change everywhere.
+
+---
+
+## [DISCUSS] (here)
 
 ### `lua/a.lua:12-18`
 
@@ -618,7 +687,7 @@ A note is inside the diff when every line of it falls into one hunk of the file'
 
 Every note is its own comment, nothing is merged together. GitHub conversation comments (`POST /repos/{owner}/{repo}/issues/{number}/comments`) can not be drafts, so staging only queues them in the store, shown as `queued, posted on submit` in the summary, and the submit posts them one by one after the review. The review body only carries the review note of the submit.
 
-Each comment is the note's markdown as it is, without its type, since reviewers on the forge do not know what the types mean. With `external.legend = true`, or `publish({ legend = true })` for one call, each comment starts with `**[<TYPE>]**` and a blank line, and a legend is posted once per merge or pull request: `external.legend_prompt` followed by every type in use with its `external.prompt`. It is its own note: a general draft note on GitLab, a queued conversation comment on GitHub; it is recorded in the store like a note, so it is not posted twice. `external.body` changes the comment.
+Each comment is the note's markdown as it is, without its type, since reviewers on the forge do not know what the types mean. With `external.legend = true`, or `publish({ legend = true })` for one call, each comment starts with `**[<TYPE>] (<reach>)**` and a blank line, and a legend is posted once per merge or pull request: `external.legend_prompt` followed by every type and reach in use with its external prompt. It is its own note: a general draft note on GitLab, a queued conversation comment on GitHub; it is recorded in the store like a note, so it is not posted twice. `external.body` changes the comment.
 
 A note of a `prefill = "selection"` type, like `rewrite`, positioned on the new side of the diff turns its first fenced block into the forge's suggestion, which the author applies with one click: ` ```suggestion ` spanning the annotated lines on GitHub, ` ```suggestion:-0+N ` from the first annotated line on GitLab. Text around the block stays as it is. Suggestions only work in the diff, so a rewrite outside it keeps its plain block and the summary counts it.
 
@@ -681,7 +750,7 @@ sources = {
 | `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |
 | `next` / `prev` | Jump to the next or previous note in the buffer. |
 | `pick` | Pick a note of the repository and jump to it. |
-| `quickfix` | Send every note of the repository to the quickfix list as `[TYPE] <location>  <first line>  (<posted>)`. Repository notes are listed without a file and are not jumped to. Each entry's `type` is the first letter of its type name and its `user_data` holds `id`, `type` and `posted`, for quickfix plugins to filter on. |
+| `quickfix` | Send every note of the repository to the quickfix list as `[TYPE] <location>  <first line>  (<posted>)`, with ` (<reach>)` after the type when it is not the default. Repository notes are listed without a file and are not jumped to. Each entry's `type` is the first letter of its type name and its `user_data` holds `id`, `type`, `reach` and `posted`, for quickfix plugins to filter on. |
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |
 | `publish` | Stage the notes as drafts on the merge or pull request of the current branch, `publish!` submits the review. |

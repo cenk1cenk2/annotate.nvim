@@ -2,12 +2,14 @@ local M = {}
 
 ---@class annotate.TypeText
 ---@field prompt string
+---@field reach? table<string, string> prompt replacing `prompt` for a reach of the type
 
 ---@class annotate.Type
 ---@field key string
 ---@field name string
 ---@field icon string
 ---@field hl string
+---@field reaches string[] how far a note of the type reaches, the first one is the default
 ---@field export annotate.TypeText what the agent reading the export is told about the type
 ---@field external annotate.TypeText what reviewers on the forge are told about the type in the legend
 ---@field prefill? "selection" start a new note with the annotated lines in a fenced block
@@ -15,11 +17,13 @@ local M = {}
 ---@class annotate.InputKeys
 ---@field cycle string
 ---@field cycle_prev string
+---@field reach string
+---@field selection string
 ---@field submit string
 ---@field cancel string
 ---@field close string
 
----@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys, types: annotate.Type[], index: integer): string
+---@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys, types: annotate.Type[], index: integer, reach: string): string
 
 ---@class annotate.InputConfig
 ---@field width number
@@ -83,6 +87,7 @@ local M = {}
 
 ---@class annotate.ExportHeadings
 ---@field description string
+---@field reach string
 ---@field compared string
 
 ---@class annotate.ExportConfig
@@ -92,9 +97,10 @@ local M = {}
 ---@field dir string
 ---@field filename string|fun(repository: string): string
 ---@field repository string
+---@field reach table<string, string>|false what each reach means, listed under its heading when set
 ---@field headings annotate.ExportHeadings
 ---@field separator string
----@field label fun(type: annotate.Type): string
+---@field label fun(type: annotate.Type, reach?: string): string
 ---@field heading fun(annotation: annotate.Annotation, type: annotate.Type, location: string): string
 ---@field format? fun(annotations: annotate.Annotation[], opts: annotate.ExportOptions, config: annotate.Config): string
 
@@ -111,7 +117,7 @@ local M = {}
 ---@field summary_keys annotate.ExternalSummaryKeys
 ---@field legend boolean
 ---@field legend_prompt string
----@field body fun(annotation: annotate.Annotation, type: annotate.Type, location: string, legend: boolean): string
+---@field body fun(annotation: annotate.Annotation, type: annotate.Type, location: string, legend: boolean, reach: string): string
 
 ---@class annotate.Config
 ---@field log_level? number
@@ -136,15 +142,22 @@ local defaults = {
   log_level = vim.log.levels.INFO,
   types = {
     {
-      key = "issue",
-      name = "Issue",
+      key = "apply",
+      name = "Apply",
       icon = "",
       hl = "Special",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "Something here is wrong or not the way I want it. The note says what to change and how, in general terms, and may say what I dislike about how it is now. Work out the concrete change from that direction: apply it here and anywhere the same problem appears, follow the intent rather than the literal wording, and tell me where you applied it.",
+        prompt = "Make the change the note asks for at this location only. Follow its intent over the literal wording, and leave similar code elsewhere alone.",
+        reach = {
+          pattern = "The note shows one instance of a change I want everywhere. Find every occurrence of the same thing in the repository, apply the change consistently, and list each place you changed.",
+        },
       },
       external = {
-        prompt = "Something here should change. The comment says what and roughly how; please apply it here and wherever the same pattern appears.",
+        prompt = "Please change this as the comment says.",
+        reach = {
+          pattern = "Please change this here and wherever the same pattern appears.",
+        },
       },
     },
     {
@@ -152,6 +165,7 @@ local defaults = {
       name = "Rewrite",
       icon = "",
       hl = "Function",
+      reaches = { "here" },
       export = {
         prompt = "Replace the code at this location with what the note shows. The fenced block is the replacement I want; apply it as given, adjusting only what is needed for it to compile and fit the surrounding code, and say what you adjusted.",
       },
@@ -161,51 +175,79 @@ local defaults = {
       prefill = "selection",
     },
     {
-      key = "general",
-      name = "General",
-      icon = "",
-      hl = "DiagnosticInfo",
-      export = {
-        prompt = "A note about the repository as a whole, not only the line it is pinned to. Treat the location as one example: find every place the same thing applies, handle it there too, and list where you applied it.",
-      },
-      external = {
-        prompt = "A remark about the change as a whole rather than this line alone; it likely applies in other places too.",
-      },
-    },
-    {
-      key = "suggestion",
-      name = "Suggestion",
+      key = "consider",
+      name = "Consider",
       icon = "",
       hl = "DiagnosticWarn",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "An idea worth weighing, not an order. Evaluate it honestly against the surrounding code: apply it if it holds up, and if you decide against it, say why in a sentence or two. Never skip it silently.",
+        prompt = "An idea for this spot, not an order. Weigh it against the surrounding code: apply it if it holds up, otherwise say why in a sentence or two. Never skip it silently.",
+        reach = {
+          pattern = "An idea that may fit in many places. Find where it would apply, judge each place on its own, apply it where it holds up, and list both the places you changed and the ones you left, with a reason.",
+        },
       },
       external = {
         prompt = "An idea worth considering, not a requirement; take it or say in the thread why not.",
+        reach = {
+          pattern = "An idea that may fit in other places too; take it where it helps or say in the thread why not.",
+        },
       },
     },
     {
-      key = "question",
-      name = "Question",
+      key = "discuss",
+      name = "Discuss",
       icon = "",
       hl = "DiagnosticHint",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "A question for us to settle together, not for you to answer alone. Change no code for it. Give your read, the options and their trade-offs, recommend one, and wait for my answer before acting on anything it decides.",
+        prompt = "A decision for us to settle together. Change no code for it. Give your read, the options with their trade-offs and a recommendation, then wait for my answer.",
+        reach = {
+          pattern = "A decision about something that recurs. Change no code. Find where it occurs, say how widespread it is and how the occurrences differ, give the options and a recommendation, then wait for my answer before touching any of them.",
+        },
       },
       external = {
-        prompt = "A question for the author; please answer in the thread before this merges.",
+        prompt = "A question to settle in the thread before this merges.",
+        reach = {
+          pattern = "A question about something that recurs across the change; let's settle it in the thread before this merges.",
+        },
       },
     },
     {
-      key = "bug",
-      name = "Bug",
-      icon = "",
-      hl = "DiagnosticError",
+      key = "report",
+      name = "Report",
+      icon = "",
+      hl = "DiagnosticInfo",
+      reaches = { "here", "pattern" },
       export = {
-        prompt = "This is, or will cause, a bug, and the note says how it shows up. Confirm the failure by reproducing it or reasoning it through from the code, fix the cause rather than the symptom, and add a test that fails without the fix whenever the code is testable.",
+        prompt = "Change no code. Find out what the note asks about this location, such as what it does, why it is this way, or what depends on it, and report it.",
+        reach = {
+          pattern = "Change no code. Find every place in the repository like this one and report them as a list, a line on each, noting how they differ.",
+        },
       },
       external = {
-        prompt = "This is, or will cause, a bug, and the comment says how it shows up. Please fix the cause and cover it with a test where you can.",
+        prompt = "Could you explain this in the thread?",
+        reach = {
+          pattern = "Could you list in the thread where else this happens?",
+        },
+      },
+    },
+    {
+      key = "keep",
+      name = "Keep",
+      icon = "",
+      hl = "DiagnosticOk",
+      reaches = { "here", "pattern" },
+      export = {
+        prompt = "This is the style I want. Change nothing here, and follow it in any code you write or touch.",
+        reach = {
+          pattern = "This is the reference style for the repository. Change nothing here; sweep the repository for code that drifts from it, bring that code in line, and list each place you changed.",
+        },
+      },
+      external = {
+        prompt = "Done well; please keep it this way.",
+        reach = {
+          pattern = "Done well; this should be the example for similar code, so please bring other places in line with it.",
+        },
       },
     },
     {
@@ -213,23 +255,12 @@ local defaults = {
       name = "Context",
       icon = "",
       hl = "Comment",
+      reaches = { "here" },
       export = {
-        prompt = "Background for the other notes: why the code is this way, a constraint, or history. Do not act on it by itself; use it while you work through the rest.",
+        prompt = "Background for the other notes: why the code is this way, a constraint, or history. Nothing to do for it by itself; use it while working through the rest.",
       },
       external = {
         prompt = "Background for the other comments; nothing to change for it by itself.",
-      },
-    },
-    {
-      key = "praise",
-      name = "Praise",
-      icon = "",
-      hl = "DiagnosticOk",
-      export = {
-        prompt = "This is the pattern I want. Keep it, and treat it as the reference: look for places that drift from it, bring them in line, and list each one you changed.",
-      },
-      external = {
-        prompt = "Something done well; keep it and use it as the example for similar code.",
       },
     },
   },
@@ -247,7 +278,13 @@ local defaults = {
     virtual_text_format = function(annotation, t)
       local scope = annotation.line == 0 and "file" or annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end)
 
-      return ("%s%s %s: %s"):format(scope and scope .. "  " or "", t.icon, t.name, vim.split(annotation.text, "\n", { plain = true })[1])
+      return ("%s%s %s%s: %s"):format(
+        scope and scope .. "  " or "",
+        t.icon,
+        t.name,
+        annotation.reach and (" (%s)"):format(annotation.reach) or "",
+        vim.split(annotation.text, "\n", { plain = true })[1]
+      )
     end,
     blend = 0.15,
     priority = 4096,
@@ -266,8 +303,20 @@ local defaults = {
       return table.concat(names, " · ")
     end,
     title_pos = "center",
-    footer = function(_, keys)
-      return (" %s/%s cycle  %s submit  %s close "):format(keys.cycle_prev, keys.cycle, keys.submit, keys.close)
+    footer = function(t, keys, _, _, reach)
+      local reaches = vim.tbl_map(function(r)
+        return r == reach and #t.reaches > 1 and ("[%s]"):format(r) or r
+      end, t.reaches)
+
+      return (" %s%s  %s/%s cycle  %s selection  %s submit  %s close "):format(
+        table.concat(reaches, " · "),
+        #t.reaches > 1 and ("  %s reach"):format(keys.reach) or "",
+        keys.cycle_prev,
+        keys.cycle,
+        keys.selection,
+        keys.submit,
+        keys.close
+      )
     end,
     footer_pos = "center",
     filetype = "annotate",
@@ -275,6 +324,8 @@ local defaults = {
     keys = {
       cycle = "<C-n>",
       cycle_prev = "<C-p>",
+      reach = "<C-l>",
+      selection = "<C-y>",
       submit = "<C-s>",
       cancel = "q",
       close = "<C-q>",
@@ -321,13 +372,15 @@ local defaults = {
       return ("%s-%s.md"):format(repository, os.date("%Y%m%d-%H%M%S"))
     end,
     repository = "repository",
+    reach = false,
     headings = {
       description = "Description",
+      reach = "Reach",
       compared = "Compared",
     },
     separator = "---",
-    label = function(t)
-      return ("[%s]"):format(t.name:upper())
+    label = function(t, reach)
+      return reach and ("[%s] (%s)"):format(t.name:upper(), reach) or ("[%s]"):format(t.name:upper())
     end,
     heading = function(annotation, _, location)
       return annotation.file and ("### `%s`"):format(location) or ("### %s"):format(location)
@@ -347,8 +400,8 @@ local defaults = {
     },
     legend = false,
     legend_prompt = "Each comment in this review is marked with its kind; here is what each kind asks of you.",
-    body = function(annotation, t, _, legend)
-      return legend and ("**[%s]**\n\n%s"):format(t.name:upper(), annotation.text) or annotation.text
+    body = function(annotation, t, _, legend, reach)
+      return legend and ("**[%s] (%s)**\n\n%s"):format(t.name:upper(), reach, annotation.text) or annotation.text
     end,
   },
 }
@@ -361,6 +414,9 @@ M.options = vim.deepcopy(defaults)
 ---@return annotate.Config
 function M.setup(config)
   M.options = vim.tbl_deep_extend("force", {}, defaults, config or {})
+  for _, t in ipairs(M.options.types) do
+    t.reaches = t.reaches or { "here" }
+  end
 
   return M.options
 end
@@ -374,6 +430,15 @@ function M.type(key)
       return t, index
     end
   end
+end
+
+--- The prompt of a type for a reach, `export` for the agent or `external` for the forge.
+---@param t annotate.Type
+---@param kind "export"|"external"
+---@param reach string
+---@return string
+function M.prompt(t, kind, reach)
+  return t[kind].reach and t[kind].reach[reach] or t[kind].prompt
 end
 
 --- Resolves an option that is either the value itself or a function returning it.

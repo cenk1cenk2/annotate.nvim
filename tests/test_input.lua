@@ -37,10 +37,19 @@ T["title falls back to the current type when it does not fit"] = function()
   eq(input.title(types, 2, 9), "… [2 B] …")
 end
 
-T["footer names both cycle keys"] = function()
+T["footer names the reach and the keys"] = function()
   local types = config.options.types
 
-  eq(config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1), " <C-p>/<C-n> cycle  <C-s> submit  <C-q> close ")
+  eq(config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1, "here"), " here  <C-p>/<C-n> cycle  <C-y> selection  <C-s> submit  <C-q> close ")
+end
+
+T["footer marks the current reach and its key when the type has several"] = function()
+  local t = { key = "a", name = "A", reaches = { "here", "pattern" } }
+
+  eq(
+    config.resolve(config.options.input.footer, t, config.options.input.keys, { t }, 1, "pattern"),
+    " here · [pattern]  <C-l> reach  <C-p>/<C-n> cycle  <C-y> selection  <C-s> submit  <C-q> close "
+  )
 end
 
 ---@param lines string[]

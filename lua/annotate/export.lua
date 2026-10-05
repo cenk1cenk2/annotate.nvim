@@ -44,26 +44,39 @@ function M.compare(a, b)
   return a.created_at < b.created_at
 end
 
---- Groups annotations by type in the configured order, unknown types last, each group ordered by `compare`.
+--- Groups annotations by type and reach in the configured order, unknown ones last, each group ordered by `compare`.
 ---@param annotations annotate.Annotation[]
----@return { type: annotate.Type, annotations: annotate.Annotation[] }[]
+---@return { type: annotate.Type, reach: string, annotations: annotate.Annotation[] }[]
 function M.sections(annotations)
+  local marks = require("annotate.marks")
   local types = vim.deepcopy(config.options.types)
   local grouped = {}
   for _, annotation in ipairs(annotations) do
     if not config.type(annotation.type) and not grouped[annotation.type] then
-      table.insert(types, { key = annotation.type, name = annotation.type, export = { prompt = "" }, external = { prompt = "" } })
+      table.insert(types, marks.type(annotation))
     end
 
+    local reach = marks.reach(annotation)
     grouped[annotation.type] = grouped[annotation.type] or {}
-    table.insert(grouped[annotation.type], annotation)
+    grouped[annotation.type][reach] = grouped[annotation.type][reach] or {}
+    table.insert(grouped[annotation.type][reach], annotation)
   end
 
   local sections = {}
   for _, t in ipairs(types) do
-    if grouped[t.key] then
-      table.sort(grouped[t.key], M.compare)
-      table.insert(sections, { type = t, annotations = grouped[t.key] })
+    local reaches = vim.list_extend({}, t.reaches)
+    for reach in vim.spairs(grouped[t.key] or {}) do
+      if not vim.list_contains(reaches, reach) then
+        table.insert(reaches, reach)
+      end
+    end
+
+    for _, reach in ipairs(reaches) do
+      local group = grouped[t.key] and grouped[t.key][reach]
+      if group then
+        table.sort(group, M.compare)
+        table.insert(sections, { type = t, reach = reach, annotations = group })
+      end
     end
   end
 
@@ -87,9 +100,20 @@ function M.render(annotations, opts)
   end, M.sections(annotations))
 
   local lines = { opts.prompt or cfg.prompt, "", ("## %s"):format(cfg.headings.description), "" }
+  local reaches = {}
   for _, section in ipairs(sections) do
-    local t = section.type
-    table.insert(lines, t.export.prompt ~= "" and ("- %s: %s"):format(cfg.label(t), t.export.prompt) or ("- %s"):format(cfg.label(t)))
+    local prompt = config.prompt(section.type, "export", section.reach)
+    table.insert(lines, prompt ~= "" and ("- %s: %s"):format(cfg.label(section.type, section.reach), prompt) or ("- %s"):format(cfg.label(section.type, section.reach)))
+    if cfg.reach and cfg.reach[section.reach] and not vim.list_contains(reaches, section.reach) then
+      table.insert(reaches, section.reach)
+    end
+  end
+
+  if #reaches > 0 then
+    vim.list_extend(lines, { "", ("## %s"):format(cfg.headings.reach), "" })
+    for _, reach in ipairs(reaches) do
+      table.insert(lines, ("- %s: %s"):format(reach, cfg.reach[reach]))
+    end
   end
 
   local compared = {}
@@ -113,7 +137,7 @@ function M.render(annotations, opts)
     if index > 1 then
       vim.list_extend(lines, { "", cfg.separator })
     end
-    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(section.type)), "" })
+    vim.list_extend(lines, { "", ("## %s"):format(cfg.label(section.type, section.reach)), "" })
 
     for i, annotation in ipairs(section.annotations) do
       if i > 1 then

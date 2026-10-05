@@ -17,7 +17,7 @@ T["keeps the store under store.dir"] = function()
   local dir = vim.fn.tempname()
   config.setup({ store = { dir = dir } })
 
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "broken" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "broken" })
 
   eq(vim.startswith(store.path(), dir), true)
   eq(vim.uv.fs_stat(store.path()) ~= nil, true)
@@ -25,7 +25,7 @@ T["keeps the store under store.dir"] = function()
 end
 
 T["add persists and reloads"] = function()
-  local added = store.add({ file = "a.lua", line = 3, type = "bug", text = "broken" })
+  local added = store.add({ file = "a.lua", line = 3, type = "report", text = "broken" })
 
   local reloaded = store.load(true)
 
@@ -36,7 +36,7 @@ T["add persists and reloads"] = function()
 end
 
 T["update changes fields and clears nil values"] = function()
-  local added = store.add({ file = "a.lua", line = 3, line_end = 5, type = "bug", text = "broken" })
+  local added = store.add({ file = "a.lua", line = 3, line_end = 5, type = "report", text = "broken" })
 
   store.update(added.id, { text = "still broken", line_end = vim.NIL })
 
@@ -52,8 +52,8 @@ T["update of an unknown id errors"] = function()
 end
 
 T["delete removes the annotation"] = function()
-  local first = store.add({ file = "a.lua", line = 1, type = "general", text = "one" })
-  store.add({ file = "a.lua", line = 2, type = "general", text = "two" })
+  local first = store.add({ file = "a.lua", line = 1, type = "consider", text = "one" })
+  store.add({ file = "a.lua", line = 2, type = "consider", text = "two" })
 
   store.delete(first.id)
 
@@ -63,8 +63,8 @@ T["delete removes the annotation"] = function()
 end
 
 T["get_at matches ranges, revisions and whole-file notes"] = function()
-  store.add({ file = "a.lua", line = 4, line_end = 6, type = "bug", text = "range" })
-  store.add({ file = "a.lua", line = 5, rev = "abcdef12345", type = "bug", text = "rev" })
+  store.add({ file = "a.lua", line = 4, line_end = 6, type = "report", text = "range" })
+  store.add({ file = "a.lua", line = 5, rev = "abcdef12345", type = "report", text = "rev" })
   store.add({ file = "a.lua", line = 0, type = "context", text = "file" })
 
   eq(store.get_at("a.lua", 5).text, "range")
@@ -74,7 +74,7 @@ T["get_at matches ranges, revisions and whole-file notes"] = function()
 end
 
 T["archive moves the file and clears the store"] = function()
-  store.add({ file = "a.lua", line = 1, type = "general", text = "one" })
+  store.add({ file = "a.lua", line = 1, type = "consider", text = "one" })
   local path = store.path()
 
   local archived = store.archive()
@@ -94,8 +94,8 @@ local function texts()
 end
 
 T["restore into an empty store takes the archive and removes it"] = function()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
-  store.add({ file = "a.lua", line = 2, line_end = 3, type = "issue", text = "two" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  store.add({ file = "a.lua", line = 2, line_end = 3, type = "apply", text = "two" })
   local archived = store.archive()
 
   eq(store.restore(archived, "merge"), 2)
@@ -107,22 +107,22 @@ T["restore into an empty store takes the archive and removes it"] = function()
 end
 
 T["restore merge skips annotations the store already has"] = function()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "same" })
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "archived" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "same" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "archived" })
   local archived = store.archive()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "same" })
-  store.add({ file = "a.lua", line = 1, type = "issue", text = "same" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "same" })
+  store.add({ file = "a.lua", line = 1, type = "apply", text = "same" })
 
   eq(store.restore(archived, "merge"), 1)
 
   eq(texts(), { "same", "same", "archived" })
-  eq(store.load(true)[2].type, "issue")
+  eq(store.load(true)[2].type, "apply")
 end
 
 T["restore replace archives the store first"] = function()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "archived" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "archived" })
   local archived = store.archive()
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "live" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "live" })
 
   store.restore(archived, "replace")
 
@@ -133,7 +133,7 @@ T["restore replace archives the store first"] = function()
 end
 
 T["restore rejects an unknown mode"] = function()
-  store.add({ file = "a.lua", line = 1, type = "bug", text = "one" })
+  store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
   local archived = store.archive()
 
   MiniTest.expect.error(function()
@@ -158,13 +158,33 @@ T["prune removes archives older than 30 days"] = function()
 end
 
 T["archives in the same second never overwrite each other"] = function()
-  store.add({ type = "bug", file = "a.lua", line = 1, text = "first" })
+  store.add({ type = "report", file = "a.lua", line = 1, text = "first" })
   local first = store.archive()
-  store.add({ type = "bug", file = "a.lua", line = 1, text = "second" })
+  store.add({ type = "report", file = "a.lua", line = 1, text = "second" })
   local second = store.archive()
 
   eq(first ~= second, true)
   eq(vim.uv.fs_stat(first) ~= nil and vim.uv.fs_stat(second) ~= nil, true)
+end
+
+T["maps the types of earlier versions to their replacements on load"] = function()
+  store.add({ file = "a.lua", line = 1, type = "apply", text = "placeholder" })
+  local path = store.path()
+  vim.fn.writefile({
+    vim.json.encode({
+      annotations = {
+        { id = "1", file = "a.lua", line = 1, type = "general", text = "wide", created_at = 0 },
+        { id = "2", file = "a.lua", line = 2, type = "question", text = "why", created_at = 0 },
+        { id = "3", file = "a.lua", line = 3, type = "rewrite", text = "same", created_at = 0 },
+      },
+    }),
+  }, path)
+
+  local loaded = vim.tbl_map(function(annotation)
+    return { annotation.type, annotation.reach }
+  end, store.load(true))
+
+  eq(loaded, { { "apply", "pattern" }, { "discuss" }, { "rewrite" } })
 end
 
 return T

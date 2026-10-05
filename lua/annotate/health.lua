@@ -36,6 +36,16 @@ function M.check()
     health.error("git is not available")
   end
 
+  for _, t in ipairs(require("annotate.config").options.types) do
+    for _, kind in ipairs({ "export", "external" }) do
+      for reach in vim.spairs(t[kind] and t[kind].reach or {}) do
+        if not vim.list_contains(t.reaches, reach) then
+          health.warn(("Type %s has a %s prompt for reach %s, which is not in its reaches: %s"):format(t.key, kind, reach, table.concat(t.reaches, ", ")))
+        end
+      end
+    end
+  end
+
   local external = require("annotate.config").options.external
   for _, cli in ipairs({ external.gitlab_cli, external.github_cli }) do
     if vim.fn.executable(cli) == 1 then

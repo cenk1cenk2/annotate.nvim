@@ -18,17 +18,17 @@ local T = MiniTest.new_set({
 })
 
 T["renders a sign and virtual text"] = function()
-  store.add({ file = "a.lua", line = 2, type = "bug", text = "broken\nmore" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "broken\nmore" })
   marks.render(0)
 
   local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
   eq(#extmarks, 1)
   eq(extmarks[1][2], 1)
-  eq(extmarks[1][4].virt_text[1][1]:find("Bug: broken", 1, true) ~= nil, true)
+  eq(extmarks[1][4].virt_text[1][1]:find("Report: broken", 1, true) ~= nil, true)
 end
 
 T["leads the virtual text of a range with its lines"] = function()
-  store.add({ file = "a.lua", line = 2, line_end = 4, type = "bug", text = "broken" })
+  store.add({ file = "a.lua", line = 2, line_end = 4, type = "report", text = "broken" })
   marks.render(0)
 
   local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
@@ -36,7 +36,7 @@ T["leads the virtual text of a range with its lines"] = function()
 end
 
 T["shows a whole-file note above the first line led by file"] = function()
-  store.add({ file = "a.lua", line = 0, type = "bug", text = "everything" })
+  store.add({ file = "a.lua", line = 0, type = "report", text = "everything" })
   marks.render(0)
 
   local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
@@ -45,8 +45,8 @@ T["shows a whole-file note above the first line led by file"] = function()
 end
 
 T["writes moved lines back to the store on write"] = function()
-  local single = store.add({ file = "a.lua", line = 2, type = "bug", text = "single" })
-  local range = store.add({ file = "a.lua", line = 3, line_end = 4, type = "suggestion", text = "range" })
+  local single = store.add({ file = "a.lua", line = 2, type = "report", text = "single" })
+  local range = store.add({ file = "a.lua", line = 3, line_end = 4, type = "consider", text = "range" })
   marks.render(0)
 
   vim.api.nvim_buf_set_lines(0, 0, 0, false, { "new 1", "new 2", "new 3" })
@@ -59,7 +59,7 @@ T["writes moved lines back to the store on write"] = function()
 end
 
 T["skips annotations past the end of the buffer"] = function()
-  store.add({ file = "a.lua", line = 40, type = "bug", text = "gone" })
+  store.add({ file = "a.lua", line = 40, type = "report", text = "gone" })
   marks.render(0)
 
   eq(#vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, {}), 0)

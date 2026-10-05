@@ -4,11 +4,12 @@ local M = {
 
 local config = require("annotate.config")
 
----@alias annotate.InputCallback fun(type_key: string?, text: string?)
+---@alias annotate.InputCallback fun(type_key: string?, text: string?, reach: string?) reach is nil when it is the default of the type
 
 ---@class annotate.InputOptions
 ---@field type? string
 ---@field text? string
+---@field reach? string
 ---@field title? string fixed title for free text that has no type, cycling is disabled; submitting calls back with a nil type and the text, empty included, cancelling with nils
 ---@field location? annotate.Location what the note is taken on, for the `prefill` of its type
 ---@field origin? integer buffer the note is taken on, defaults to the current one
@@ -34,7 +35,7 @@ function M.fallback(opts, callback)
       return callback(nil, nil)
     end
 
-    callback(t.key, text)
+    callback(t.key, text, vim.list_contains(t.reaches, opts.reach) and opts.reach ~= t.reaches[1] and opts.reach or nil)
   end)
 end
 
@@ -42,10 +43,11 @@ end
 ---@param types annotate.Type[]
 ---@param index integer
 ---@param width integer
+---@param reach? string defaults to the reach of the current type
 ---@return string
-function M.title(types, index, width)
+function M.title(types, index, width, reach)
   local cfg = config.options.input
-  local title = config.resolve(cfg.title, types[index], cfg.keys, types, index)
+  local title = config.resolve(cfg.title, types[index], cfg.keys, types, index, reach or types[index].reaches[1])
 
   if vim.fn.strdisplaywidth(title) <= width then
     return title
@@ -123,6 +125,7 @@ function M.open(opts, callback)
   local types = config.options.types
   local _, index = config.type(opts.type)
   index = index or 1
+  local reach = vim.list_contains(types[index].reaches, opts.reach) and opts.reach or types[index].reaches[1]
 
   local result = {}
   local prefill = M.prefill(origin, opts.location)
@@ -150,8 +153,17 @@ function M.open(opts, callback)
     return true
   end
 
+  local function footer()
+    return config.resolve(cfg.footer, types[index], cfg.keys, types, index, reach)
+  end
+
   local function title(self)
-    self:set_title(opts.title and (" %s "):format(opts.title) or M.title(types, index, vim.api.nvim_win_get_width(self.win)), cfg.title_pos)
+    self:set_title(opts.title and (" %s "):format(opts.title) or M.title(types, index, vim.api.nvim_win_get_width(self.win), reach), cfg.title_pos)
+    local text = footer()
+    if self.opts.footer ~= text and self:valid() and self:has_border() then
+      self.opts.footer = text
+      vim.api.nvim_win_set_config(self.win, { footer = text, footer_pos = cfg.footer_pos })
+    end
   end
 
   local function cycle(self, step)
@@ -160,8 +172,37 @@ function M.open(opts, callback)
     end
 
     index = (index - 1 + step) % #types + 1
+    if not vim.list_contains(types[index].reaches, reach) then
+      reach = types[index].reaches[1]
+    end
     title(self)
     fill(self)
+  end
+
+  local function widen(self)
+    local reaches = types[index].reaches
+    if opts.title or #reaches < 2 then
+      return
+    end
+
+    reach = reaches[(vim.fn.index(reaches, reach) + 1) % #reaches + 1]
+    title(self)
+  end
+
+  --- Inserts the annotated lines as a fenced block below the cursor, or as the whole input when it is empty.
+  local function selection(self)
+    if not prefill then
+      return
+    end
+
+    if vim.trim(self:text()) == "" then
+      vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, prefill)
+      vim.api.nvim_win_set_cursor(self.win, { #prefill, 0 })
+    else
+      local row = vim.api.nvim_win_get_cursor(self.win)[1]
+      vim.api.nvim_buf_set_lines(self.buf, row, row, false, prefill)
+      vim.api.nvim_win_set_cursor(self.win, { row + #prefill, 0 })
+    end
   end
 
   local win = snacks.win({
@@ -171,7 +212,7 @@ function M.open(opts, callback)
     border = cfg.border,
     title = " ",
     title_pos = cfg.title_pos,
-    footer = config.resolve(cfg.footer, types[index], cfg.keys, types, index),
+    footer = footer(),
     footer_pos = cfg.footer_pos,
     enter = true,
     text = opts.text,
@@ -201,6 +242,18 @@ function M.open(opts, callback)
         mode = { "i", "n" },
         desc = "Cycle annotation type backwards",
       },
+      [cfg.keys.reach] = {
+        cfg.keys.reach,
+        widen,
+        mode = { "i", "n" },
+        desc = "Cycle annotation reach",
+      },
+      [cfg.keys.selection] = {
+        cfg.keys.selection,
+        selection,
+        mode = { "i", "n" },
+        desc = "Insert the annotated lines",
+      },
       [cfg.keys.submit] = {
         cfg.keys.submit,
         function(self)
@@ -208,7 +261,7 @@ function M.open(opts, callback)
           if opts.title then
             result = { nil, text }
           elseif text ~= "" then
-            result = { types[index].key, text }
+            result = { types[index].key, text, reach ~= types[index].reaches[1] and reach or nil }
           end
 
           vim.cmd.stopinsert()
@@ -237,7 +290,7 @@ function M.open(opts, callback)
     },
     on_close = function()
       vim.schedule(function()
-        callback(result[1], result[2])
+        callback(result[1], result[2], result[3])
       end)
     end,
   })

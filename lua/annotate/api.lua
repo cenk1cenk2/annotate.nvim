@@ -81,7 +81,13 @@ local function choose(annotations, all, callback)
 
       local t = marks.type(item)
 
-      return ("%s %s: %s (%s)"):format(t.icon, t.name, vim.split(item.text, "\n", { plain = true })[1], require("annotate.export").location(item))
+      return ("%s %s%s: %s (%s)"):format(
+        t.icon,
+        t.name,
+        item.reach and (" (%s)"):format(item.reach) or "",
+        vim.split(item.text, "\n", { plain = true })[1],
+        require("annotate.export").location(item)
+      )
     end,
   }, function(item)
     if item then
@@ -93,12 +99,12 @@ end
 ---@param location annotate.Location
 ---@param opts { type?: string, origin?: integer } origin is the annotated buffer, captured when the command runs
 local function create(location, opts)
-  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key, location = location, origin = opts.origin }, function(type_key, text)
+  input.open({ type = opts.type or config.options.default_type or config.options.types[1].key, location = location, origin = opts.origin }, function(type_key, text, reach)
     if not type_key then
       return
     end
 
-    store.add(vim.tbl_extend("force", location, { type = type_key, text = text }))
+    store.add(vim.tbl_extend("force", location, { type = type_key, text = text, reach = reach }))
     marks.refresh()
   end)
 end
@@ -121,6 +127,12 @@ local function selection(opts)
   return resolve(0, math.min(line1, line2), math.max(line1, line2))
 end
 
+---@param t annotate.Type
+---@return string
+local function type_label(t)
+  return ("%s %s  %s"):format(t.icon, t.name, table.concat(t.reaches, " · "))
+end
+
 --- Lets the user choose an annotation type, calling back with its key unless cancelled.
 ---@param callback fun(key: string)
 local function choose_type(callback)
@@ -129,9 +141,7 @@ local function choose_type(callback)
   if backend() == "select" then
     return vim.ui.select(types, {
       prompt = "Annotation type",
-      format_item = function(t)
-        return ("%s %s"):format(t.icon, t.name)
-      end,
+      format_item = type_label,
     }, function(t)
       if t then
         callback(t.key)
@@ -142,7 +152,11 @@ local function choose_type(callback)
   require("snacks").picker.pick({
     title = "Annotation type",
     items = vim.tbl_map(function(t)
-      return { text = ("%s %s"):format(t.icon, t.name), key = t.key, preview = { text = t.export.prompt } }
+      local prompts = vim.tbl_map(function(reach)
+        return ("%s: %s"):format(reach, config.prompt(t, "export", reach))
+      end, t.reaches)
+
+      return { text = type_label(t), key = t.key, preview = { text = table.concat(prompts, "\n\n") } }
     end, types),
     format = "text",
     preview = "preview",
@@ -221,12 +235,12 @@ function M.edit()
   choose(annotations, false, function(chosen)
     local annotation = chosen[1]
 
-    input.open({ type = annotation.type, text = annotation.text }, function(type_key, text)
+    input.open({ type = annotation.type, text = annotation.text, reach = annotation.reach }, function(type_key, text, reach)
       if not type_key then
         return
       end
 
-      store.update(annotation.id, { type = type_key, text = text })
+      store.update(annotation.id, { type = type_key, text = text, reach = reach or vim.NIL })
       marks.refresh()
     end)
   end)
@@ -312,14 +326,16 @@ function M.show()
   local lines = {}
   for index, annotation in ipairs(annotations) do
     local t = marks.type(annotation)
+    local reach = marks.reach(annotation)
+    local prompt = config.prompt(t, "export", reach)
 
     if index > 1 then
       vim.list_extend(lines, { "", "---", "" })
     end
-    vim.list_extend(lines, { ("## %s %s"):format(t.icon, t.name), "", ("`%s`"):format(require("annotate.export").location(annotation)), "" })
+    vim.list_extend(lines, { ("## %s %s (%s)"):format(t.icon, t.name, reach), "", ("`%s`"):format(require("annotate.export").location(annotation)), "" })
     vim.list_extend(lines, posted(annotation))
-    if t.export.prompt ~= "" then
-      vim.list_extend(lines, { ("_%s_"):format(t.export.prompt), "" })
+    if prompt ~= "" then
+      vim.list_extend(lines, { ("_%s_"):format(prompt), "" })
     end
     vim.list_extend(lines, vim.split(annotation.text, "\n", { plain = true }))
   end
@@ -433,9 +449,10 @@ function M.describe(annotation)
   local t = marks.type(annotation)
   local status = M.status(annotation)
 
-  return ("%s %s  %s  %s%s"):format(
+  return ("%s %s%s  %s  %s%s"):format(
     t.icon,
     t.name,
+    annotation.reach and (" (%s)"):format(annotation.reach) or "",
     require("annotate.export").location(annotation),
     vim.split(annotation.text, "\n", { plain = true })[1],
     status and ("  %s"):format(status) or ""
@@ -470,9 +487,9 @@ function M.pick()
 
   local function open(annotation)
     if not annotation.file then
-      return input.open({ type = annotation.type, text = annotation.text }, function(type_key, text)
+      return input.open({ type = annotation.type, text = annotation.text, reach = annotation.reach }, function(type_key, text, reach)
         if type_key then
-          store.update(annotation.id, { type = type_key, text = text })
+          store.update(annotation.id, { type = type_key, text = text, reach = reach or vim.NIL })
         end
       end)
     end
@@ -536,12 +553,12 @@ M.actions = {
         return
       end
 
-      input.open({ type = item.annotation.type, text = item.annotation.text }, function(type_key, text)
+      input.open({ type = item.annotation.type, text = item.annotation.text, reach = item.annotation.reach }, function(type_key, text, reach)
         if not type_key then
           return
         end
 
-        store.update(item.annotation.id, { type = type_key, text = text })
+        store.update(item.annotation.id, { type = type_key, text = text, reach = reach or vim.NIL })
         marks.refresh()
         picker:refresh()
       end)
@@ -648,7 +665,9 @@ M.actions = {
 
       for _, item in ipairs(picker:selected({ fallback = true })) do
         local _, index = config.type(item.annotation.type)
-        store.update(item.annotation.id, { type = types[(index or 0) % #types + 1].key })
+        local t = types[(index or 0) % #types + 1]
+        local reach = item.annotation.reach
+        store.update(item.annotation.id, { type = t.key, reach = vim.list_contains(t.reaches, reach) and reach ~= t.reaches[1] and reach or vim.NIL })
       end
 
       marks.refresh()
@@ -772,13 +791,14 @@ function M.quickfix()
         end_lnum = annotation.line_end,
         valid = annotation.file and 1 or 0,
         type = t.name:sub(1, 1):upper(),
-        text = ("[%s] %s  %s%s"):format(
+        text = ("[%s]%s %s  %s%s"):format(
           t.name:upper(),
+          annotation.reach and (" (%s)"):format(annotation.reach) or "",
           require("annotate.export").location(annotation),
           vim.split(annotation.text, "\n", { plain = true })[1],
           status and ("  (%s)"):format(status) or ""
         ),
-        user_data = { id = annotation.id, type = annotation.type, posted = status },
+        user_data = { id = annotation.id, type = annotation.type, reach = marks.reach(annotation), posted = status },
       }
     end, store.all()),
   })

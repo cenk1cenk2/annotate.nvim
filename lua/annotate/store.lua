@@ -2,6 +2,7 @@
 ---@field id string
 ---@field type string
 ---@field text string
+---@field reach? string set only when it differs from the default reach of the type
 ---@field created_at integer
 ---@field posted? annotate.Posted[] where `publish` posted the annotation
 
@@ -17,6 +18,17 @@ local M = {
 
 local log = require("annotate.log")
 local git = require("annotate.git")
+
+--- Types of earlier versions, mapped to the type and reach that replaced them.
+---@type table<string, { type: string, reach?: string }>
+local renamed = {
+  issue = { type = "apply" },
+  bug = { type = "apply" },
+  general = { type = "apply", reach = "pattern" },
+  suggestion = { type = "consider" },
+  question = { type = "discuss" },
+  praise = { type = "keep" },
+}
 
 ---@return string
 function M.dir()
@@ -56,7 +68,17 @@ function M.decode(path)
     return {}
   end
 
-  return vim.json.decode(content, { luanil = { object = true, array = true } })
+  local decoded = vim.json.decode(content, { luanil = { object = true, array = true } })
+  local config = require("annotate.config")
+  for _, annotation in ipairs(decoded.annotations or {}) do
+    local to = renamed[annotation.type]
+    if to and not config.type(annotation.type) and config.type(to.type) then
+      annotation.type = to.type
+      annotation.reach = to.reach
+    end
+  end
+
+  return decoded
 end
 
 ---@param path string
@@ -260,6 +282,7 @@ function M.restore(path, mode)
         and existing.line_end == annotation.line_end
         and existing.rev == annotation.rev
         and existing.type == annotation.type
+        and existing.reach == annotation.reach
         and existing.text == annotation.text
     end)
 

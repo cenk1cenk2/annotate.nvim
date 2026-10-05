@@ -42,11 +42,17 @@ function M.snacks()
     win = function(opts)
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, type(opts.text) == "table" and opts.text or vim.split(opts.text or "", "\n"))
-      local win = { buf = bufnr, win = vim.api.nvim_open_win(bufnr, true, { relative = "editor", row = 1, col = 1, width = 60, height = 5 }), opts = opts }
+      local win = { buf = bufnr, win = vim.api.nvim_open_win(bufnr, true, { relative = "editor", row = 1, col = 1, width = 60, height = 5, border = "single" }), opts = opts }
       function win.text()
         return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
       end
       function win.set_title() end
+      function win.valid()
+        return vim.api.nvim_win_is_valid(win.win)
+      end
+      function win.has_border()
+        return true
+      end
       function win.close()
         pcall(vim.api.nvim_win_close, win.win, true)
         opts.on_close()
