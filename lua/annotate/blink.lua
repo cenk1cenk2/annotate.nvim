@@ -40,7 +40,6 @@ function M:get_completions(context, callback)
 
           table.insert(items, {
             label = symbol.name,
-            insertText = ("`%s`"):format(symbol.name),
             kind = kinds[kind] or kinds.Reference,
             detail = path and vim.fn.fnamemodify(path, ":~:."),
           })
@@ -50,6 +49,30 @@ function M:get_completions(context, callback)
 
     callback({ items = items, is_incomplete_forward = false, is_incomplete_backward = true })
   end)
+end
+
+--- Inserts the symbol name, then wraps it in backticks unless they are already around it, so previews while selecting stay plain.
+---@param item blink.cmp.CompletionItem
+---@param callback fun()
+---@param default fun()
+function M:execute(_, item, callback, default)
+  default()
+
+  local range = item.textEdit.range
+  local row, start = range.start.line, range.start.character
+  local finish = start + #item.textEdit.newText
+  local line = vim.api.nvim_buf_get_lines(0, row, row + 1, false)[1]
+  local opened = line:sub(start, start) == "`"
+
+  if line:sub(finish + 1, finish + 1) ~= "`" then
+    vim.api.nvim_buf_set_text(0, row, finish, row, finish, { "`" })
+  end
+  if not opened then
+    vim.api.nvim_buf_set_text(0, row, start, row, start, { "`" })
+  end
+  vim.api.nvim_win_set_cursor(0, { row + 1, finish + (opened and 1 or 2) })
+
+  callback()
 end
 
 return M
