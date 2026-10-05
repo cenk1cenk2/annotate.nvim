@@ -17,6 +17,23 @@ function M.repo(files)
   return vim.uv.fs_realpath(dir)
 end
 
+--- Creates a directory outside any git repository with the given files and makes it the working directory.
+---@param files? table<string, string[]>
+---@return string
+function M.dir(files)
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.env.GIT_CEILING_DIRECTORIES = vim.fs.dirname(dir)
+
+  for name, lines in pairs(files or {}) do
+    vim.fn.writefile(lines, vim.fs.joinpath(dir, name))
+  end
+
+  vim.fn.chdir(dir)
+
+  return vim.uv.fs_realpath(dir)
+end
+
 --- Stands in for snacks.nvim with a real window whose key handlers the test calls.
 ---@return table
 function M.snacks()

@@ -155,7 +155,7 @@ function M.export(opts)
   else
     local path
     if to == "file" or to == "both" then
-      path = vim.fs.joinpath(config.options.export.dir, config.resolve(config.options.export.filename, vim.fs.basename(git.root())))
+      path = vim.fs.joinpath(config.options.export.dir, config.resolve(config.options.export.filename, vim.fs.basename(git.workspace())))
       vim.fn.mkdir(vim.fs.dirname(path), "p")
       local file = assert(io.open(path, "w"))
       file:write(markdown)

@@ -34,12 +34,10 @@ function M.hash(root)
   return vim.fn.sha256(root):sub(1, 16)
 end
 
---- Store file for the repository of the current working directory.
+--- Store file for the workspace of the current working directory.
 ---@return string
 function M.path()
-  local root = git.root() or error(("annotate: not inside a git repository: %s"):format(vim.fn.getcwd()))
-
-  return vim.fs.joinpath(M.dir(), M.hash(root) .. ".json")
+  return vim.fs.joinpath(M.dir(), M.hash(git.workspace()) .. ".json")
 end
 
 --- Decoded content of a store file, empty when it does not exist.
@@ -67,11 +65,11 @@ function M.read(path)
   return M.decode(path).annotations or {}
 end
 
---- Loads the annotations of the current repository, reading the file only when the repository changed.
+--- Loads the annotations of the current workspace, reading the file only when the workspace changed.
 ---@param force? boolean
 ---@return annotate.Annotation[]
 function M.load(force)
-  local root = git.root() or error(("annotate: not inside a git repository: %s"):format(vim.fn.getcwd()))
+  local root = git.workspace()
   if not force and M.root == root then
     return M.annotations
   end

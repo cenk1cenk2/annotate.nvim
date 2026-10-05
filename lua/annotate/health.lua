@@ -30,7 +30,7 @@ function M.check()
     if root then
       health.ok(("Repository: %s, store: %s"):format(root, require("annotate.store").path()))
     else
-      health.warn(("The working directory is not inside a git repository: %s"):format(vim.fn.getcwd()))
+      health.info(("The working directory is not inside a git repository, publishing is inactive: %s, store: %s"):format(vim.fn.getcwd(), require("annotate.store").path()))
     end
   else
     health.error("git is not available")

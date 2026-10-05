@@ -1,6 +1,6 @@
 # annotate.nvim
 
-Leave typed notes on lines, ranges and whole files of a git repository, on ordinary buffers or inside diff views, and export them as one markdown document for an AI agent to work through.
+Leave typed notes on lines, ranges and whole files of a project, on ordinary buffers or inside diff views, and export them as one markdown document for an AI agent to work through.
 
 ## Features
 
@@ -462,7 +462,7 @@ In the snacks.nvim picker, `restore_delete` permanently deletes the selected arc
 
 A source decides whether it can annotate a buffer and maps a line range of that buffer to a location in the repository.
 
-- `repo` handles ordinary file buffers inside the git repository of the working directory. Paths are stored relative to the repository root with symlinks resolved.
+- `repo` handles ordinary file buffers inside the git repository of the working directory, or inside the working directory itself when it is not in a repository. Paths are stored relative to that root with symlinks resolved. Publishing still needs a git repository.
 - `diffview` handles the `diffview://` buffers of a diff view, which show a commit, a stage of the index, or a custom revision. Notes on them store that revision. The working tree side of a diff view is an ordinary file and is handled by `repo`.
 
 While a diff view is open in the current tabpage, notes from either side also record the two revisions being compared.
@@ -471,7 +471,7 @@ Locations look as follows.
 
 ```lua
 ---@class annotate.Location
----@field file string path relative to the repository root
+---@field file string path relative to the repository root, or the working directory outside a repository
 ---@field line integer 1-based, 0 for a whole-file annotation
 ---@field line_end? integer
 ---@field rev? string nil for the working tree, otherwise a commit or a stage like `:0:`

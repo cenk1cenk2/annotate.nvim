@@ -100,6 +100,23 @@ T["add_with_type stores the chosen type on the visual selection"] = function()
   eq({ added.type, added.line, added.line_end, added.text }, { "bug", 1, 2, "chosen" })
 end
 
+T["annotates a file outside a git repository"] = function()
+  require("annotate").setup()
+  vim.cmd("silent! %bwipeout!")
+  local dir = H.dir({ ["b.lua"] = { "one", "two" } })
+  vim.cmd.edit("b.lua")
+  input.open = function(opts, callback)
+    callback(opts.type, "outside")
+  end
+
+  api.add()
+
+  eq(vim.startswith(store.path(), require("annotate.config").options.store.dir), true)
+  eq(require("annotate.git").workspace(), dir)
+  local added = store.load(true)[1]
+  eq({ added.file, added.line, added.text }, { "b.lua", 1, "outside" })
+end
+
 T["add_with_type does nothing when the chooser is cancelled"] = function()
   require("annotate").setup()
   answer({ "missing" })

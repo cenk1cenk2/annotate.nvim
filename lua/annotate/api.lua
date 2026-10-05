@@ -21,25 +21,11 @@ local function backend()
   return config.options.picker.backend or (pcall(require, "snacks") and "snacks" or "select")
 end
 
----@return string?
-local function root()
-  local r = git.root()
-  if not r then
-    notify(("Not inside a git repository: %s"):format(vim.fn.getcwd()))
-  end
-
-  return r
-end
-
 ---@param bufnr integer
 ---@param line1 integer
 ---@param line2 integer
 ---@return annotate.Location?
 local function resolve(bufnr, line1, line2)
-  if not root() then
-    return nil
-  end
-
   local location = sources.resolve(bufnr, line1, line2)
   if not location then
     notify("No annotation source matches this buffer.")
@@ -205,9 +191,7 @@ end
 --- Adds a note about the repository as a whole, attached to no file.
 ---@param opts? { type?: string }
 function M.add_repository(opts)
-  if root() then
-    create({ line = 0 }, opts or {})
-  end
+  create({ line = 0 }, opts or {})
 end
 
 --- Edits the annotation under the cursor.
@@ -460,10 +444,7 @@ end
 
 --- Picks an annotation of the repository and jumps to it.
 function M.pick()
-  local r = root()
-  if not r then
-    return
-  end
+  local r = git.workspace()
 
   local annotations = store.all()
   if #annotations == 0 then
@@ -700,10 +681,6 @@ end
 ---@param opts? { mode?: "merge"|"replace" } `merge` appends the archive to the current notes instead of archiving them first
 function M.restore(opts)
   opts = opts or {}
-  if not root() then
-    return
-  end
-
   if #store.archives() == 0 then
     return notify("There are no archives.", vim.log.levels.INFO)
   end
@@ -748,10 +725,6 @@ end
 --- Permanently deletes every archive of the repository after confirmation.
 ---@param opts? { force?: boolean } force skips the confirmation
 function M.clear_archive(opts)
-  if not root() then
-    return
-  end
-
   local function clear()
     local archives = store.archives()
     store.remove_archives(archives)
@@ -768,10 +741,7 @@ end
 
 --- Sends the annotations of the repository to the quickfix list.
 function M.quickfix()
-  local r = root()
-  if not r then
-    return
-  end
+  local r = git.workspace()
 
   vim.fn.setqflist({}, " ", {
     title = config.options.quickfix.title,
@@ -804,10 +774,6 @@ end
 --- Archives the annotations of the repository and clears the marks after confirmation.
 ---@param opts? { force?: boolean } force skips the confirmation
 function M.clear(opts)
-  if not root() then
-    return
-  end
-
   local function clear()
     local archived = store.archive()
     marks.clear()

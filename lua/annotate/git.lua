@@ -20,12 +20,20 @@ function M.root(dir)
   return M.roots[dir] or nil
 end
 
---- Path of a file relative to the git root of the current working directory.
+--- Git root of the current working directory, the working directory itself outside a repository.
+---@return string
+function M.workspace()
+  local cwd = vim.fn.getcwd()
+
+  return M.root(cwd) or vim.uv.fs_realpath(cwd) or cwd
+end
+
+--- Path of a file relative to the workspace of the current working directory.
 ---@param path string
 ---@return string?
 function M.relative(path)
-  local root = M.root()
-  if not root or path == "" then
+  local root = M.workspace()
+  if path == "" then
     return nil
   end
 
