@@ -32,6 +32,7 @@ T["completes symbols from the annotated buffer's language servers"] = function()
     end, response.items),
     { "`resolve`", "`Resolver`" }
   )
+  eq({ response.is_incomplete_forward, response.is_incomplete_backward }, { false, true })
 end
 
 T["returns nothing without an annotated buffer or a short keyword"] = function()

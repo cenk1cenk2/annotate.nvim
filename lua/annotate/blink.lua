@@ -48,7 +48,7 @@ function M:get_completions(context, callback)
       end
     end
 
-    callback({ items = items, is_incomplete_forward = true, is_incomplete_backward = true })
+    callback({ items = items, is_incomplete_forward = false, is_incomplete_backward = true })
   end)
 end
 
