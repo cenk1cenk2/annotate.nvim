@@ -78,6 +78,7 @@
 ---@class annotate.Verdict
 ---@field key "comment"|"approve"|"unapprove"|"request_changes"
 ---@field label string
+---@field confirm? string asked before submitting with the verdict, which is cancelled unless confirmed
 
 ---@class annotate.Publisher
 ---@field name string
@@ -794,10 +795,20 @@ local function review(publisher, verdicts, opts)
     return nil
   end
 
-  if not vim.iter(verdicts.list):any(function(v)
+  local entry = vim.iter(verdicts.list):find(function(v)
     return v.key == verdict
-  end) then
+  end)
+  if not entry then
     error(("annotate: the %s verdict is not available on this %s%s"):format(verdict, publisher.target:lower(), verdicts.reason and (": %s"):format(verdicts.reason) or ""), 0)
+  end
+
+  if entry.confirm then
+    local confirmed = M.wait(function(callback)
+      vim.ui.select({ "Yes", "No" }, { prompt = ("%s: %s"):format(config.options.notify.title, entry.confirm) }, callback)
+    end)
+    if confirmed ~= "Yes" then
+      return nil
+    end
   end
 
   local note = opts.note

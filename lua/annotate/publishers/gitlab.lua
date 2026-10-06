@@ -7,6 +7,29 @@ M.label = "GitLab"
 
 M.target = "Merge request"
 
+M.permissions = [[
+query($project: ID!, $iid: String!) {
+  currentUser { username }
+  project(fullPath: $project) {
+    mergeRequest(iid: $iid) {
+      discussionLocked
+      userPermissions { createNote canApprove }
+      approvedBy { nodes { username } }
+      reviewers { nodes { username mergeRequestInteraction { reviewState } } }
+    }
+  }
+}]]
+
+M.add_reviewer = [[
+mutation($project: ID!, $iid: String!, $username: String!) {
+  mergeRequestSetReviewers(input: { projectPath: $project, iid: $iid, reviewerUsernames: [$username], operationMode: APPEND }) { errors }
+}]]
+
+M.request_changes = [[
+mutation($project: ID!, $iid: String!) {
+  mergeRequestRequestChanges(input: { projectPath: $project, iid: $iid }) { errors }
+}]]
+
 function M.match(url)
   local host = require("annotate.publishers").parse_remote(url)
 
@@ -32,7 +55,7 @@ function M.api(remote, endpoint, opts)
     vim.list_extend(cmd, { "--method", opts.method })
   end
   if opts.body then
-    vim.list_extend(cmd, { "--input", "-" })
+    vim.list_extend(cmd, { "--header", "Content-Type: application/json", "--input", "-" })
   end
   if opts.paginate then
     table.insert(cmd, "--paginate")
@@ -44,6 +67,30 @@ function M.api(remote, endpoint, opts)
   end
 
   return publishers.json(cmd, opts.body)
+end
+
+--- Runs a GraphQL query or mutation on the host of the remote, raising on the errors it returns.
+---@param remote annotate.Remote
+---@param query string
+---@param variables table
+---@return table
+function M.graphql(remote, query, variables)
+  local result = require("annotate.publishers").json({
+    require("annotate.config").options.external.gitlab_cli,
+    "api",
+    "--hostname",
+    remote.host,
+    "graphql",
+    "--header",
+    "Content-Type: application/json",
+    "--input",
+    "-",
+  }, { query = query, variables = variables }) or {}
+  if result.errors then
+    error(("annotate: GitLab GraphQL failed: %s"):format(vim.json.encode(result.errors)), 0)
+  end
+
+  return result.data or {}
 end
 
 function M.resolve(remote)
@@ -75,25 +122,45 @@ function M.resolve(remote)
   }
 end
 
---- Comment always; Approve while the user can approve and has not; Unapprove once the user has approved.
+--- From the permissions of the user on the merge request: Comment while the user can write notes; Approve while the user can approve and has not,
+--- Unapprove once the user has approved; Request changes unless the user already requested them, confirming to add the user as a reviewer first, which GitLab requires.
 function M.verdicts(target)
-  local approvals = M.api(target.remote, ("merge_requests/%d/approvals"):format(target.id))
-  local has = approvals.user_has_approved
-  if has == nil then
-    local username = require("annotate.publishers").json({ require("annotate.config").options.external.gitlab_cli, "api", "--hostname", target.remote.host, "user" }).username
-    has = vim.iter(approvals.approved_by or {}):any(function(approval)
-      return approval.user.username == username
-    end)
+  local data = M.graphql(target.remote, M.permissions, { project = target.remote.path, iid = tostring(target.id) })
+  local mr = vim.tbl_get(data, "project", "mergeRequest") or error(("annotate: GitLab returned no merge request %s"):format(target.reference), 0)
+  local username = vim.tbl_get(data, "currentUser", "username")
+
+  if not mr.userPermissions.createNote then
+    error(("annotate: you can not comment on %s%s"):format(target.reference, mr.discussionLocked and ": its discussion is locked" or ""), 0)
   end
+
+  local approved = vim.iter(vim.tbl_get(mr, "approvedBy", "nodes") or {}):any(function(user)
+    return user.username == username
+  end)
+  local reviewer = vim.iter(vim.tbl_get(mr, "reviewers", "nodes") or {}):find(function(user)
+    return user.username == username
+  end)
 
   local verdicts = { { key = "comment", label = "Comment" } }
-  if has then
+  local reasons = {}
+  if approved then
     table.insert(verdicts, { key = "unapprove", label = "Unapprove" })
-  elseif approvals.user_can_approve ~= false then
+  elseif mr.userPermissions.canApprove then
     table.insert(verdicts, { key = "approve", label = "Approve" })
+  else
+    table.insert(reasons, "approving is not available: you can not approve this merge request")
+  end
+  if not reviewer then
+    target.joins_as_reviewer = username
+    table.insert(verdicts, {
+      key = "request_changes",
+      label = "Request changes",
+      confirm = ("Requesting changes needs you as a reviewer, add yourself as a reviewer of %s?"):format(target.reference),
+    })
+  elseif vim.tbl_get(reviewer, "mergeRequestInteraction", "reviewState") ~= "REQUESTED_CHANGES" then
+    table.insert(verdicts, { key = "request_changes", label = "Request changes" })
   end
 
-  return verdicts, approvals.user_can_approve == false and not has and "approving is not available: you can not approve this merge request" or nil
+  return verdicts, #reasons > 0 and table.concat(reasons, "; ") or nil
 end
 
 function M.drafts(target)
@@ -200,6 +267,22 @@ function M.submit(target, verdict, note)
     M.api(target.remote, ("merge_requests/%d/approve"):format(target.id), { method = "POST", body = { sha = target.head } })
   elseif verdict == "unapprove" then
     M.api(target.remote, ("merge_requests/%d/unapprove"):format(target.id), { method = "POST" })
+  elseif verdict == "request_changes" then
+    if target.joins_as_reviewer then
+      local added = vim.tbl_get(
+        M.graphql(target.remote, M.add_reviewer, { project = target.remote.path, iid = tostring(target.id), username = target.joins_as_reviewer }),
+        "mergeRequestSetReviewers",
+        "errors"
+      ) or {}
+      if #added > 0 then
+        error(("annotate: adding you as a reviewer of %s failed: %s"):format(target.reference, table.concat(added, ", ")), 0)
+      end
+    end
+    local errors = vim.tbl_get(M.graphql(target.remote, M.request_changes, { project = target.remote.path, iid = tostring(target.id) }), "mergeRequestRequestChanges", "errors")
+      or {}
+    if #errors > 0 then
+      error(("annotate: requesting changes on %s failed: %s"):format(target.reference, table.concat(errors, ", ")), 0)
+    end
   end
 
   local notes = {}

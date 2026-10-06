@@ -42,7 +42,29 @@ local function gitlab()
 
   function forge.handle(endpoint, method, body)
     local path = endpoint:gsub("^projects/[^/]+/", "")
-    if path:match("^merge_requests%?") then
+    if path == "graphql" and body.query == publishers.registry.gitlab.permissions then
+      return {
+        data = {
+          currentUser = { username = "me" },
+          project = {
+            mergeRequest = {
+              discussionLocked = forge.locked or false,
+              userPermissions = { createNote = not forge.locked, canApprove = forge.approvals.user_can_approve },
+              approvedBy = { nodes = forge.approvals.user_has_approved and { { username = "me" } } or {} },
+              reviewers = { nodes = forge.reviewer == false and {} or { { username = "me", mergeRequestInteraction = { reviewState = forge.review_state or "UNREVIEWED" } } } },
+            },
+          },
+        },
+      }
+    elseif path == "graphql" and body.query == publishers.registry.gitlab.add_reviewer then
+      forge.reviewer = body.variables.username
+
+      return { data = { mergeRequestSetReviewers = { errors = {} } } }
+    elseif path == "graphql" then
+      forge.review_state = "REQUESTED_CHANGES"
+
+      return { data = { mergeRequestRequestChanges = { errors = {} } } }
+    elseif path:match("^merge_requests%?") then
       return { { iid = forge.iid } }
     elseif path == ("merge_requests/%d"):format(forge.iid) then
       return {
@@ -162,6 +184,8 @@ local function github()
       return comment
     elseif endpoint:match("/events$") then
       forge.submitted = body
+    elseif endpoint == "graphql" and body.query == publishers.registry.github.permissions then
+      return { data = { repository = { viewerPermission = forge.permission or "WRITE", pullRequest = { locked = forge.locked or false, viewerDidAuthor = forge.author == "me" } } } }
     elseif endpoint == "graphql" then
       forge.next = forge.next + 1
       table.insert(forge.comments, { id = forge.next })
@@ -237,6 +261,14 @@ local function requests(method, pattern)
   return vim.tbl_filter(function(call)
     return call.method == method and call.endpoint ~= nil and call.endpoint:find(pattern) ~= nil
   end, calls)
+end
+
+--- GraphQL requests creating GitHub review threads.
+---@return { cmd: string[], method: string, endpoint?: string, body?: table }[]
+local function created()
+  return vim.tbl_filter(function(call)
+    return call.body ~= nil and call.body.query == publishers.registry.github.thread
+  end, requests("GET", "^graphql$"))
 end
 
 ---@param url string
@@ -442,7 +474,7 @@ T["a rewrite outside the diff posts a plain block and is counted"] = function()
 
   publishers.publish()
 
-  local threads = requests("GET", "^graphql$")
+  local threads = created()
   eq({ threads[1].body.variables.line, threads[1].body.variables.startLine, threads[1].body.variables.body }, { 3, 2, "```suggestion\nX\n```" })
   eq(threads[2].body.variables.subjectType, "FILE")
   eq(prompts[1]:find("- To post: 2 (1 suggestion, 1 outside the diff, 1 rewrite without a suggestion)", 1, true) ~= nil, true)
@@ -655,7 +687,7 @@ T["GitHub records the forge ids and updates changed review and conversation comm
   eq(requests("PATCH", "pulls/comments/202$")[1].body, { body = "fixed wording" })
   eq(requests("PATCH", "issues/comments/203$")[1].body, { body = "overall, revised" })
   eq(forge.conversation[1].body, "overall, revised")
-  eq(#requests("GET", "^graphql$"), 1)
+  eq(#created(), 1)
   eq(#requests("POST", "/comments$"), 2)
 end
 
@@ -805,7 +837,7 @@ T["GitLab offers Approve while the user can approve"] = function()
 
   publishers.publish({ publish = true, note = "" })
 
-  eq(asked.offered, { "Comment", "Approve" })
+  eq(asked.offered, { "Comment", "Approve", "Request changes" })
   eq(#requests("POST", "/approve$"), 1)
 end
 
@@ -819,13 +851,14 @@ T["GitLab offers Unapprove once the user has approved"] = function()
 
   publishers.publish({ publish = true, note = "" })
 
-  eq(asked.offered, { "Comment", "Unapprove" })
+  eq(asked.offered, { "Comment", "Unapprove", "Request changes" })
   eq(forge.approved, false)
 end
 
-T["GitLab only comments without asking when the user can not approve"] = function()
+T["GitLab only comments without asking when the user can not approve and already requested changes"] = function()
   local forge = gitlab()
   forge.approvals = { user_can_approve = false, user_has_approved = false }
+  forge.review_state = "REQUESTED_CHANGES"
   stub(forge)
   config.setup({ external = { summary = true } })
   local asked = verdict("Proceed")
@@ -836,6 +869,80 @@ T["GitLab only comments without asking when the user can not approve"] = functio
   eq(asked.offered, { "Proceed", "Cancel" })
   eq(#requests("POST", "bulk_publish$"), 1)
   eq(#requests("POST", "/approve$"), 0)
+end
+
+T["GitLab requests changes through GraphQL"] = function()
+  local forge = gitlab()
+  stub(forge)
+  verdict("Request changes")
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "Please fix." })
+
+  eq(#requests("POST", "bulk_publish$"), 1)
+  eq(forge.review_state, "REQUESTED_CHANGES")
+  eq(#requests("POST", "/approve$"), 0)
+end
+
+T["GitLab asks to add the user as a reviewer before requesting changes"] = function()
+  local forge = gitlab()
+  forge.reviewer = false
+  stub(forge)
+  local prompts = {}
+  answer({ "Request changes", "No" }, prompts)
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(prompts[2], "annotate: Requesting changes needs you as a reviewer, add yourself as a reviewer of !5?")
+  eq(messages[#messages], "Submitting the review was cancelled.")
+  eq({ forge.reviewer, #requests("POST", "draft_notes$") }, { false, 0 })
+
+  answer({ "Request changes", "Yes" })
+  publishers.publish({ publish = true, note = "" })
+
+  eq({ forge.reviewer, forge.review_state }, { "me", "REQUESTED_CHANGES" })
+  eq(#requests("POST", "bulk_publish$"), 1)
+end
+
+T["GitLab refuses to submit when the user can not comment"] = function()
+  local forge = gitlab()
+  forge.locked = true
+  stub(forge)
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, verdict = "comment", note = "" })
+
+  eq(messages[#messages], "annotate: you can not comment on !5: its discussion is locked")
+  eq(#requests("POST", "draft_notes$"), 0)
+end
+
+T["GitHub refuses to submit on a locked pull request without write access"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  forge.locked = true
+  forge.permission = "READ"
+  stub(forge)
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, verdict = "comment", note = "" })
+
+  eq(messages[#messages], "annotate: you can not comment on #7: its conversation is locked to collaborators")
+  eq(forge.submitted, nil)
+end
+
+T["GitHub lets collaborators review a locked pull request"] = function()
+  remote("git@github.com:owner/repo.git")
+  local forge = github()
+  forge.locked = true
+  stub(forge)
+  local asked = verdict("Approve")
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ publish = true, note = "" })
+
+  eq(asked.offered, { "Comment", "Approve", "Request changes" })
+  eq(forge.submitted.event, "APPROVE")
 end
 
 T["GitHub offers only Comment on a pull request the user authored"] = function()
@@ -1039,7 +1146,7 @@ T["GitHub staging creates a pending review with threads and no event"] = functio
   eq(#reviews, 1)
   eq(reviews[1].body, { commit_id = HEAD })
   eq(#requests("POST", "/comments$"), 0)
-  local threads = requests("GET", "^graphql$")
+  local threads = created()
   eq(threads[1].body.variables, { review = "R201", path = "a.lua", body = "broken", line = 3, side = "RIGHT", startLine = 2, startSide = "RIGHT" })
   eq(threads[2].body.variables, { review = "R201", path = "a.lua", body = "broken", subjectType = "FILE" })
   eq(#requests("POST", "/events$"), 0)
@@ -1096,7 +1203,7 @@ T["GitHub submit finalizes the pending review with the verdict and note"] = func
   publishers.publish({ publish = true })
 
   eq(#requests("POST", "/reviews$"), 1)
-  eq(#requests("GET", "^graphql$"), 2)
+  eq(#created(), 2)
   eq(forge.submitted, { event = "REQUEST_CHANGES", body = "Please fix." })
   store.load(true)
   eq({ store.get(staged.id).posted[1].state, store.get(added.id).posted[1].state }, { "published", "published" })

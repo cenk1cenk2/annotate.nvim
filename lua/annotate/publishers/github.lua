@@ -14,6 +14,14 @@ mutation($review: ID!, $path: String!, $body: String!, $line: Int, $side: DiffSi
   }
 }]]
 
+M.permissions = [[
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    viewerPermission
+    pullRequest(number: $number) { locked viewerDidAuthor }
+  }
+}]]
+
 function M.match(url)
   return require("annotate.publishers").parse_remote(url) == "github.com"
 end
@@ -100,17 +108,34 @@ function M.resolve(remote)
   return target
 end
 
---- Comment always; Approve and Request changes unless the user authored the pull request, which GitHub refuses.
+--- From the permissions of the user on the pull request: Comment unless the conversation is locked to collaborators;
+--- Approve and Request changes unless the user authored the pull request, which GitHub refuses.
 function M.verdicts(target)
-  if M.login(target) == target.author then
-    return { { key = "comment", label = "Comment" } }, "approving is not available: you authored this pull request"
+  local owner, name = target.remote.path:match("^(.+)/([^/]+)$")
+  local result = require("annotate.publishers").json(
+    { require("annotate.config").options.external.github_cli, "api", "--hostname", target.remote.host, "graphql", "--input", "-" },
+    {
+      query = M.permissions,
+      variables = { owner = owner, name = name, number = target.id },
+    }
+  )
+  local repository = vim.tbl_get(result or {}, "data", "repository")
+  local pr = repository and repository.pullRequest or error(("annotate: GitHub returned no pull request %s: %s"):format(target.reference, vim.json.encode(result)), 0)
+
+  local collaborator = vim.list_contains({ "ADMIN", "MAINTAIN", "WRITE" }, repository.viewerPermission)
+  if pr.locked and not collaborator then
+    error(("annotate: you can not comment on %s: its conversation is locked to collaborators"):format(target.reference), 0)
   end
 
-  return {
-    { key = "comment", label = "Comment" },
+  local verdicts = { { key = "comment", label = "Comment" } }
+  if pr.viewerDidAuthor then
+    return verdicts, "approving is not available: you authored this pull request"
+  end
+
+  return vim.list_extend(verdicts, {
     { key = "approve", label = "Approve" },
     { key = "request_changes", label = "Request changes" },
-  }
+  })
 end
 
 --- Login of the authenticated user, asked once per target.
