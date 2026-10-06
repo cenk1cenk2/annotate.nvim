@@ -70,7 +70,7 @@ function M.render(bufnr)
 
   for _, annotation in ipairs(store.for_file(location.file, location.rev)) do
     local t = M.type(annotation)
-    local virt_text = cfg.virtual_text and { { cfg.virtual_text_format(annotation, t), t.hl } } or nil
+    local virt_text = cfg.virtual_text and { { cfg.virtual_text_format(annotation, t, M.reach(annotation)), t.hl } } or nil
 
     if annotation.line == 0 then
       vim.api.nvim_buf_set_extmark(bufnr, M.ns, 0, 0, {

@@ -24,7 +24,15 @@ T["renders a sign and virtual text"] = function()
   local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
   eq(#extmarks, 1)
   eq(extmarks[1][2], 1)
-  eq(extmarks[1][4].virt_text[1][1]:find("Report: broken", 1, true) ~= nil, true)
+  eq(extmarks[1][4].virt_text[1][1]:find("[REPORT](here): broken", 1, true) ~= nil, true)
+end
+
+T["shows the reach of the note in the virtual text"] = function()
+  store.add({ file = "a.lua", line = 2, type = "apply", reach = "pattern", text = "everywhere" })
+  marks.render(0)
+
+  local extmarks = vim.api.nvim_buf_get_extmarks(0, marks.ns, 0, -1, { details = true })
+  eq(extmarks[1][4].virt_text[1][1]:find("[APPLY](pattern): everywhere", 1, true) ~= nil, true)
 end
 
 T["leads the virtual text of a range with its lines"] = function()

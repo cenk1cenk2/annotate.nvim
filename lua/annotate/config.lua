@@ -46,7 +46,7 @@ local M = {}
 ---@field sign boolean
 ---@field line_highlight boolean
 ---@field virtual_text boolean
----@field virtual_text_format fun(annotation: annotate.Annotation, type: annotate.Type): string
+---@field virtual_text_format fun(annotation: annotate.Annotation, type: annotate.Type, reach: string): string reach is the one of the note, the default of the type when it has none
 ---@field blend number
 ---@field priority integer
 
@@ -280,16 +280,10 @@ local defaults = {
     sign = true,
     line_highlight = true,
     virtual_text = true,
-    virtual_text_format = function(annotation, t)
+    virtual_text_format = function(annotation, t, reach)
       local scope = annotation.line == 0 and "file" or annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end)
 
-      return ("%s%s %s%s: %s"):format(
-        scope and scope .. "  " or "",
-        t.icon,
-        t.name,
-        annotation.reach and (" (%s)"):format(annotation.reach) or "",
-        vim.split(annotation.text, "\n", { plain = true })[1]
-      )
+      return ("%s%s [%s](%s): %s"):format(scope and scope .. "  " or "", t.icon, t.name:upper(), reach, vim.split(annotation.text, "\n", { plain = true })[1])
     end,
     blend = 0.15,
     priority = 4096,

@@ -303,17 +303,12 @@ require("annotate").setup({
     line_highlight = true,
     -- summary at the end of the line, or above the first line for whole-file notes
     virtual_text = true,
-    -- text of the summary, led by `file` for whole-file notes and the line range for multi-line ones
-    virtual_text_format = function(annotation, t)
+    -- text of the summary, led by `file` for whole-file notes and the line range for multi-line ones,
+    -- with the type and the reach of the note, the default of the type when it has none, as [APPLY](here)
+    virtual_text_format = function(annotation, t, reach)
       local scope = annotation.line == 0 and "file" or annotation.line_end and ("%d-%d"):format(annotation.line, annotation.line_end)
 
-      return ("%s%s %s%s: %s"):format(
-        scope and scope .. "  " or "",
-        t.icon,
-        t.name,
-        annotation.reach and (" (%s)"):format(annotation.reach) or "",
-        vim.split(annotation.text, "\n", { plain = true })[1]
-      )
+      return ("%s%s [%s](%s): %s"):format(scope and scope .. "  " or "", t.icon, t.name:upper(), reach, vim.split(annotation.text, "\n", { plain = true })[1])
     end,
     -- share of the type color mixed into the Normal background for the line highlight
     blend = 0.15,
