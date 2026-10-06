@@ -99,7 +99,7 @@ function M.render(annotations, opts)
     return not opts.types or vim.list_contains(opts.types, section.type.key)
   end, M.sections(annotations))
 
-  local lines = { opts.prompt or cfg.prompt, "", ("## %s"):format(cfg.headings.description), "" }
+  local lines = { opts.prompt or config.text("export", "prompt", sections), "", ("## %s"):format(cfg.headings.description), "" }
   local reaches = {}
   for _, section in ipairs(sections) do
     local prompt = config.prompt(section.type, "export", section.reach)
@@ -187,7 +187,7 @@ function M.export(opts)
     end
 
     if to == "clipboard" or to == "both" then
-      local message = path and ("%s\n\n@%s"):format(config.options.export.clipboard_message, path) or markdown
+      local message = path and ("%s\n\n@%s"):format(config.text("export", "clipboard_message", path), path) or markdown
       vim.fn.setreg("+", message)
       vim.fn.setreg("*", message)
     end

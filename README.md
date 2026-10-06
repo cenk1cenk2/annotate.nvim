@@ -409,7 +409,9 @@ require("annotate").setup({
   export = {
     -- "file" | "clipboard" | "both" | fun(markdown, annotations)
     to = "both",
+    -- string, or fun(default, sections): string to build on the default
     prompt = "These are my review notes on this repository. Each section below groups one kind of note, and its line under Description says what to do with that kind. Work through every item: re-read the code at each location before acting, since lines may have moved since I wrote the note. Bring back anything that needs me one at a time, with its file, line and a one-line summary of the code there. When you finish, report back item by item.",
+    -- string, or fun(default, path): string
     clipboard_message = "Here are my review notes for this repository. Read the attached file and work through every item as it describes.",
     -- directory exported files are written to
     dir = vim.fs.joinpath(vim.uv.os_tmpdir(), "annotate"),
@@ -458,7 +460,8 @@ require("annotate").setup({
     },
     -- label each comment with its type and post a legend of the types once per merge or pull request
     legend = false,
-    -- first line of the legend, followed by each used type and reach with its external prompt
+    -- first line of the legend, followed by each used type and reach with its external prompt;
+    -- string, or fun(default, sections): string to build on the default
     legend_prompt = "Each comment in this review is marked with its kind; here is what each kind asks of you.",
     -- fun(annotation, type, location, legend, reach): string, the comment posted for a note
     body = function(annotation, t, _, legend, reach)
@@ -650,7 +653,7 @@ On a commit.
 require("annotate").setup({
   export = {
     format = function(annotations, opts, config)
-      local lines = { opts.prompt or config.export.prompt, "" }
+      local lines = { opts.prompt or require("annotate.config").text("export", "prompt", {}), "" }
       for _, annotation in ipairs(annotations) do
         if not opts.types or vim.list_contains(opts.types, annotation.type) then
           table.insert(lines, ("- %s `%s:%d` %s"):format(annotation.type, annotation.file, annotation.line, annotation.text))

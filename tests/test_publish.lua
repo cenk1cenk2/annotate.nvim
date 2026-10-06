@@ -494,6 +494,29 @@ T["the legend labels the bodies and lists the external prompts of the used types
   eq(messages[#messages], "Every annotation is already posted to !5 Add the thing, 3 notes skipped.")
 end
 
+T["the legend prompt can be a callback building on its default"] = function()
+  local forge = gitlab()
+  stub(forge)
+  local default = config.options.external.legend_prompt
+  local received
+  config.setup({
+    external = {
+      summary = false,
+      legend_prompt = function(prompt, sections)
+        received = { prompt, #sections }
+
+        return "PREFIX " .. prompt
+      end,
+    },
+  })
+  add({ file = "a.lua", line = 2 })
+
+  publishers.publish({ legend = true })
+
+  eq(received, { default, 1 })
+  eq(vim.split(requests("POST", "draft_notes$")[1].body.note, "\n")[1], "PREFIX " .. default)
+end
+
 T["external.legend turns the legend on and GitHub queues it as its own conversation comment"] = function()
   remote("git@github.com:owner/repo.git")
   local forge = github()

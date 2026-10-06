@@ -529,9 +529,9 @@ end
 ---@param annotations annotate.Annotation[]
 ---@return annotate.Annotation
 function M.legend(annotations)
-  local cfg = config.options.external
-  local lines = { cfg.legend_prompt, "" }
-  for _, section in ipairs(require("annotate.export").sections(annotations)) do
+  local sections = require("annotate.export").sections(annotations)
+  local lines = { config.text("external", "legend_prompt", sections), "" }
+  for _, section in ipairs(sections) do
     local label = ("[%s] (%s)"):format(section.type.name:upper(), section.reach)
     local prompt = config.prompt(section.type, "external", section.reach)
     table.insert(lines, prompt ~= "" and ("- **%s**: %s"):format(label, prompt) or ("- **%s**"):format(label))

@@ -155,6 +155,42 @@ T["writes the file to export.dir with export.filename"] = function()
   eq(table.concat(vim.fn.readfile(vim.fs.joinpath(dir, "notes.md")), "\n") .. "\n", markdown)
 end
 
+T["text options can be callbacks building on their defaults"] = function()
+  local dir = vim.fn.tempname()
+  local received = {}
+  config.setup({
+    export = {
+      to = "both",
+      dir = dir,
+      filename = "notes.md",
+      prompt = function(default, sections)
+        received.prompt = { default, #sections, sections[1].type.key }
+
+        return "PREFIX " .. default
+      end,
+      clipboard_message = function(default, path)
+        received.clipboard = { default, path }
+
+        return "CLIP " .. default
+      end,
+    },
+  })
+  H.repo()
+  store.add({ file = "a.lua", line = 1, type = "report", text = "broken" })
+  local defaults = vim.deepcopy(require("annotate.config").options)
+  config.setup({})
+  local prompt, message = config.options.export.prompt, config.options.export.clipboard_message
+  config.setup(defaults)
+
+  local markdown = export.export()
+
+  local path = vim.fs.joinpath(dir, "notes.md")
+  eq(received.prompt, { prompt, 1, "report" })
+  eq(vim.split(markdown, "\n")[1], "PREFIX " .. prompt)
+  eq(received.clipboard, { message, path })
+  eq(vim.fn.getreg("+"), ("CLIP %s\n\n@%s"):format(message, path))
+end
+
 T["formats revision ranges"] = function()
   eq(export.location(note({ file = "a.lua", line = 2, line_end = 4, rev = "abcdef12345" })), "a.lua:~2-4 @ abcdef12345")
 end

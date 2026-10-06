@@ -90,10 +90,12 @@ local M = {}
 ---@field reach string
 ---@field compared string
 
+---@alias annotate.Section { type: annotate.Type, reach: string, annotations: annotate.Annotation[] }
+
 ---@class annotate.ExportConfig
 ---@field to annotate.ExportTarget
----@field prompt string
----@field clipboard_message string
+---@field prompt string|fun(default: string, sections: annotate.Section[]): string
+---@field clipboard_message string|fun(default: string, path: string): string
 ---@field dir string
 ---@field filename string|fun(repository: string): string
 ---@field repository string
@@ -116,7 +118,7 @@ local M = {}
 ---@field summary boolean
 ---@field summary_keys annotate.ExternalSummaryKeys
 ---@field legend boolean
----@field legend_prompt string
+---@field legend_prompt string|fun(default: string, sections: annotate.Section[]): string
 ---@field body fun(annotation: annotate.Annotation, type: annotate.Type, location: string, legend: boolean, reach: string): string
 
 ---@class annotate.Config
@@ -439,6 +441,14 @@ end
 ---@return string
 function M.prompt(t, kind, reach)
   return t[kind].reach and t[kind].reach[reach] or t[kind].prompt
+end
+
+--- A text option of a config section, called with its default and `...` when it is a function.
+---@param section "export"|"external"
+---@param key string
+---@return string
+function M.text(section, key, ...)
+  return M.resolve(M.options[section][key], defaults[section][key], ...)
 end
 
 --- Resolves an option that is either the value itself or a function returning it.
