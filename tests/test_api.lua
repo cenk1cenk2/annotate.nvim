@@ -284,7 +284,22 @@ end
 
 ---@param annotations annotate.Annotation[]
 local function picker(annotations)
+  local resumed = {}
+  package.loaded.snacks = {
+    picker = {
+      resume = function(opts)
+        table.insert(resumed, opts.source)
+      end,
+    },
+  }
+
   return {
+    opts = { source = "annotate" },
+    closed = false,
+    resumed = resumed,
+    close = function(self)
+      self.closed = true
+    end,
     refreshed = 0,
     selected = function()
       return vim.tbl_map(function(annotation)
@@ -322,9 +337,67 @@ T["delete action keeps the annotations when not confirmed"] = function()
   local p = picker({ added })
 
   api.actions.delete.action(p)
+  vim.wait(100, function()
+    return #p.resumed > 0
+  end)
 
   eq(#store.load(true), 1)
-  eq(p.refreshed, 0)
+  eq({ p.closed, p.resumed }, { true, { "annotate" } })
+end
+
+T["delete action closes the picker while it confirms and reopens it after"] = function()
+  require("annotate").setup()
+  local closed
+  local added = store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  local p = picker({ added })
+  vim.ui.select = function(_, _, callback)
+    closed = p.closed
+    callback("Yes")
+  end
+
+  api.actions.delete.action(p)
+  vim.wait(100, function()
+    return #p.resumed > 0
+  end)
+
+  eq(closed, true)
+  eq(#store.load(true), 0)
+  eq(p.resumed, { "annotate" })
+end
+
+T["edit action closes the picker for the input and reopens it after"] = function()
+  require("annotate").setup()
+  local added = store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  local p = picker({ added })
+  local closed
+  input.open = function(_, callback)
+    closed = p.closed
+    callback("apply", "edited")
+  end
+
+  api.actions.edit.action(p, { annotation = added })
+  vim.wait(100, function()
+    return #p.resumed > 0
+  end)
+
+  eq(closed, true)
+  eq(store.load(true)[1].text, "edited")
+  eq(p.resumed, { "annotate" })
+end
+
+T["split action closes the picker and leaves it closed once confirmed"] = function()
+  require("annotate").setup()
+  answer({ "Yes" })
+  local added = store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
+  store.add({ file = "a.lua", line = 2, type = "report", text = "two" })
+  local p = picker({ added })
+
+  api.actions.split.action(p)
+  vim.wait(50)
+
+  eq(p.closed, true)
+  eq(p.resumed, {})
+  eq(#store.load(true), 1)
 end
 
 T["type action cycles to the next type and wraps around"] = function()
@@ -373,6 +446,7 @@ end
 ---@param current annotate.Annotation
 local function selecting(selected, current)
   return {
+    opts = { source = "annotate" },
     closed = false,
     selected = function(_, opts)
       local items = vim.tbl_map(function(annotation)

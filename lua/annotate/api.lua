@@ -248,10 +248,30 @@ end
 
 ---@param prompt string
 ---@param callback fun()
-local function confirm(prompt, callback)
+---@param cancel? fun() called when the answer is not Yes
+local function confirm(prompt, callback, cancel)
   vim.ui.select({ "Yes", "No" }, { prompt = prompt }, function(choice)
     if choice == "Yes" then
       callback()
+    elseif cancel then
+      cancel()
+    end
+  end)
+end
+
+--- Closes the picker while `spawn` shows a window of its own, like the input or a confirmation, so it can take the focus,
+--- then reopens it with its query, selection and cursor once `spawn` calls `done`, unless it was told not to.
+---@param picker snacks.Picker
+---@param spawn fun(done: fun(reopen?: boolean))
+local function detach(picker, spawn)
+  local source = picker.opts.source
+  picker:close()
+
+  spawn(function(reopen)
+    if reopen ~= false then
+      vim.schedule(function()
+        require("snacks").picker.resume({ source = source })
+      end)
     end
   end)
 end
@@ -260,7 +280,8 @@ end
 ---@param annotations annotate.Annotation[]
 ---@param force? boolean
 ---@param callback fun()
-local function remove(annotations, force, callback)
+---@param cancel? fun() called when the confirmation is not answered with Yes
+local function remove(annotations, force, callback, cancel)
   local function delete()
     for _, annotation in ipairs(annotations) do
       store.delete(annotation.id)
@@ -275,7 +296,8 @@ local function remove(annotations, force, callback)
   confirm(
     #annotations == 1 and ("Delete %s annotation: %s?"):format(marks.type(annotations[1]).name, vim.split(annotations[1].text, "\n", { plain = true })[1])
       or ("Delete %d annotations?"):format(#annotations),
-    delete
+    delete,
+    cancel
   )
 end
 
@@ -560,6 +582,7 @@ function M.pick(opts)
   local actions, keys = bind(opts.all and { "restore" } or { "edit", "delete", "delete_all", "type", "split" })
 
   require("snacks").picker.pick({
+    source = "annotate",
     title = opts.all and ("%s (all branches)"):format(config.options.picker.title) or config.options.picker.title,
     finder = function()
       return vim.tbl_map(function(candidate)
@@ -606,14 +629,14 @@ M.actions = {
         return
       end
 
-      input.open({ type = item.annotation.type, text = item.annotation.text, reach = item.annotation.reach }, function(type_key, text, reach)
-        if not type_key then
-          return
-        end
-
-        store.update(item.annotation.id, { type = type_key, text = text, reach = reach or vim.NIL })
-        marks.refresh()
-        picker:refresh()
+      detach(picker, function(done)
+        input.open({ type = item.annotation.type, text = item.annotation.text, reach = item.annotation.reach }, function(type_key, text, reach)
+          if type_key then
+            store.update(item.annotation.id, { type = type_key, text = text, reach = reach or vim.NIL })
+            marks.refresh()
+          end
+          done()
+        end)
       end)
     end,
   },
@@ -627,9 +650,18 @@ M.actions = {
         return
       end
 
-      remove(annotations, config.options.picker.force.delete, function()
-        marks.refresh()
-        picker:refresh()
+      if config.options.picker.force.delete or not config.options.confirm_delete then
+        return remove(annotations, true, function()
+          marks.refresh()
+          picker:refresh()
+        end)
+      end
+
+      detach(picker, function(done)
+        remove(annotations, false, function()
+          marks.refresh()
+          done()
+        end, done)
       end)
     end,
   },
@@ -645,7 +677,12 @@ M.actions = {
         return clear()
       end
 
-      confirm("Archive and clear all annotations?", clear)
+      detach(picker, function(done)
+        confirm("Archive and clear all annotations?", function()
+          clear()
+          done(false)
+        end, done)
+      end)
     end,
   },
   split = {
@@ -671,7 +708,12 @@ M.actions = {
         return split()
       end
 
-      confirm(("Archive all %d annotations and keep the %d selected?"):format(total, #annotations), split)
+      detach(picker, function(done)
+        confirm(("Archive all %d annotations and keep the %d selected?"):format(total, #annotations), function()
+          split()
+          done(false)
+        end, done)
+      end)
     end,
   },
   restore = {
@@ -693,16 +735,17 @@ M.actions = {
         return
       end
 
-      local function delete()
-        store.remove_archives(paths)
-        picker:refresh()
-      end
-
       if config.options.picker.force.delete then
-        return delete()
+        store.remove_archives(paths)
+        return picker:refresh()
       end
 
-      confirm(("Delete %d archives permanently?"):format(#paths), delete)
+      detach(picker, function(done)
+        confirm(("Delete %d archives permanently?"):format(#paths), function()
+          store.remove_archives(paths)
+          done()
+        end, done)
+      end)
     end,
   },
   restore_clear = {
@@ -717,7 +760,12 @@ M.actions = {
         return clear()
       end
 
-      confirm("Delete every archive of this repository permanently?", clear)
+      detach(picker, function(done)
+        confirm("Delete every archive of this repository permanently?", function()
+          clear()
+          done(false)
+        end, done)
+      end)
     end,
   },
   type = {
@@ -795,6 +843,7 @@ function M.restore(opts)
   local actions, keys = bind({ "restore_delete", "restore_clear" })
 
   require("snacks").picker.pick({
+    source = "annotate_archive",
     title = "Restore archive",
     finder = function()
       return vim.tbl_map(function(path)
