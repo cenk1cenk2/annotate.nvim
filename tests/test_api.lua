@@ -563,6 +563,29 @@ T["pick lists the current branch, and with all copies a note of another branch b
   eq(#store.load(true), 2)
 end
 
+T["the picker preview shows the code a note covers in a fenced block before its text"] = function()
+  require("annotate").setup()
+  local root = vim.fn.getcwd()
+  local git = { "git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false" }
+  vim.system({ "git", "add", "a.lua" }):wait()
+  vim.system(vim.list_extend(vim.deepcopy(git), { "commit", "-q", "--no-verify", "-m", "init" })):wait()
+  local sha = vim.trim(vim.system({ "git", "rev-parse", "--short=11", "HEAD" }, { text = true }):wait().stdout)
+  vim.fn.writefile({ "ONE", "TWO" }, "a.lua")
+
+  local range = store.add({ type = "report", file = "a.lua", line = 1, line_end = 2, text = "broken" })
+  eq(api.preview_note(root, range), table.concat({ "`a.lua:1-2`", "", "```lua", "ONE", "TWO", "```", "", "broken" }, "\n"))
+
+  local committed = store.add({ type = "report", file = "a.lua", line = 2, rev = sha, text = "old" })
+  eq(api.preview_note(root, committed), table.concat({ ("`a.lua:~2 @ %s`"):format(sha), "", "```lua", "two", "```", "", "old" }, "\n"))
+
+  vim.system({ "git", "add", "a.lua" }):wait()
+  local staged = store.add({ type = "report", file = "a.lua", line = 1, rev = ":0:", text = "staged" })
+  eq(vim.split(api.preview_note(root, staged), "\n")[4], "ONE")
+
+  eq(api.preview_note(root, store.add({ type = "report", file = "a.lua", line = 0, text = "whole" })), "whole")
+  eq(api.preview_note(root, store.add({ type = "report", line = 0, text = "repository" })), "repository")
+end
+
 T["quickfix lists every note, repository notes without a file"] = function()
   local pinned = store.add({ type = "report", file = "a.lua", line = 2, text = "pinned" })
   store.update(pinned.id, { posted = { posted("draft", "!5") } })

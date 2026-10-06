@@ -505,7 +505,9 @@ A type with `prefill = "selection"`, like `rewrite`, starts a new note with the 
 
 Each row shows the type icon and name, the reach when it is not the default of the type, the location (`path:line`, `path:line-end`, `path` for a whole file, `repository`, with `~` and `@ <rev>` for a revision), the first line of the note, and where it was posted, like `draft !5, published #1`.
 
-`<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. The `select` backend has no actions.
+The snacks.nvim preview shows a note on lines as markdown: where it was posted, its location, the lines it covers in a fenced code block in the language of the file, read from its revision for a note on a diff side, then the note itself. A whole-file note previews the file, a repository note its text.
+
+`<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. An action that opens a window of its own, the input of `edit` or a confirmation, closes the picker first and reopens it with its query, selection and cursor once that window is done, unless the action ends the picker. The `select` backend has no actions.
 
 - `edit` opens the input on the note and updates it in place.
 - `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set unless `picker.force.delete` is.

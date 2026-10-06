@@ -330,6 +330,56 @@ local function posted(annotation)
   return lines
 end
 
+--- Lines a note covers, read from its revision or the working tree, nil for whole-file and repository notes or when they can not be read.
+---@param root string
+---@param annotation annotate.Annotation
+---@return string[]?
+local function covered(root, annotation)
+  if not annotation.file or annotation.line == 0 then
+    return nil
+  end
+
+  local lines
+  if annotation.rev then
+    local object = annotation.rev:sub(-1) == ":" and annotation.rev .. annotation.file or ("%s:%s"):format(annotation.rev, annotation.file)
+    local result = vim.system({ "git", "-C", root, "show", object }, { text = true }):wait()
+    lines = result.code == 0 and vim.split(result.stdout, "\n", { plain = true }) or nil
+  else
+    local ok, content = pcall(vim.fn.readfile, vim.fs.joinpath(root, annotation.file))
+    lines = ok and content or nil
+  end
+
+  return lines and vim.list_slice(lines, annotation.line, annotation.line_end or annotation.line)
+end
+
+--- Markdown preview of a note: where it was posted, the code it covers in a fenced block when it covers lines, then its text.
+---@param root string
+---@param annotation annotate.Annotation
+---@return string
+function M.preview_note(root, annotation)
+  local lines = posted(annotation)
+
+  local code = covered(root, annotation)
+  if code then
+    local fence = "```"
+    while vim.iter(code):any(function(line)
+      return line:find(fence, 1, true) ~= nil
+    end) do
+      fence = fence .. "`"
+    end
+
+    table.insert(lines, ("`%s`"):format(require("annotate.export").location(annotation)))
+    table.insert(lines, "")
+    table.insert(lines, fence .. (vim.filetype.match({ filename = annotation.file }) or ""))
+    vim.list_extend(lines, code)
+    vim.list_extend(lines, { fence, "" })
+  end
+
+  table.insert(lines, annotation.text)
+
+  return table.concat(lines, "\n")
+end
+
 --- Shows the annotations on the cursor line in a float, focusing the float when it is already open.
 function M.show()
   local cfg = config.options.show
@@ -591,7 +641,6 @@ function M.pick(opts)
           text = candidate_label(candidate),
           file = annotation.file and vim.fs.joinpath(r, annotation.file),
           pos = annotation.file and { math.max(annotation.line, 1), 0 },
-          preview = not annotation.file and { text = table.concat(vim.list_extend(posted(annotation), { annotation.text }), "\n"), ft = "markdown" } or nil,
           annotation = annotation,
           candidate = candidate,
         }
@@ -604,9 +653,12 @@ function M.pick(opts)
     },
     format = "text",
     preview = function(ctx)
-      if ctx.item.file then
+      local annotation = ctx.item.annotation
+      if annotation.file and annotation.line == 0 then
         return require("snacks").picker.preview.file(ctx)
       end
+
+      ctx.item.preview = ctx.item.preview or { text = M.preview_note(r, annotation), ft = "markdown" }
 
       return require("snacks").picker.preview.preview(ctx)
     end,
