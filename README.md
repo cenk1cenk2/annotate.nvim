@@ -293,6 +293,8 @@ require("annotate").setup({
   store = {
     -- directory holding one store file per repository and the archive
     dir = vim.fs.joinpath(vim.fn.stdpath("data"), "annotate"),
+    -- keep a store per branch instead of per repository, see Branches
+    per_branch = false,
   },
   marks = {
     -- type icon in the sign column
@@ -385,6 +387,8 @@ require("annotate").setup({
       delete_all = "<C-x>",
       type = "<C-t>",
       split = "<C-c>",
+      -- in pick({ all = true })
+      restore = "<C-r>",
       -- in the restore picker
       restore_delete = "<C-d>",
       restore_clear = "<C-x>",
@@ -516,6 +520,8 @@ Each row shows the type icon and name, the reach when it is not the default of t
 
 `<Tab>` and `<S-Tab>` select notes, as snacks.nvim binds them by default.
 
+`pick({ all = true })` also lists the notes of the other branches with `store.per_branch`, and those of the repository store taken before it, each marked with `[<branch>]`. Choosing one copies it into the current branch first, without where it was posted, then jumps to it; a note the branch already has is not copied twice. Its only action is `restore`, which copies the selected notes of other branches into the current branch and keeps the picker open. The notes of the other branches stay where they are.
+
 ### Show
 
 `require("annotate").show()` opens a float at the cursor, like a hover, with every note covering the cursor line: its type, location, the type's prompt and the full text, separated by a rule. It closes when the cursor moves or the buffer is left, or with `q` and `<Esc>`. Calling it again while it is open enters the float.
@@ -536,6 +542,10 @@ Each row shows the type icon and name, the reach when it is not the default of t
 - Otherwise the current notes are archived first, so nothing is lost, and the archive replaces them. `opts.mode = "merge"` appends the notes of the archive the store does not have yet instead.
 
 In the snacks.nvim picker, `restore_delete` permanently deletes the selected archives and keeps the picker open, `restore_clear` permanently deletes every archive of the repository and closes it. Both confirm unless `picker.force.delete` or `picker.force.restore_clear` is set. `require("annotate").clear_archive({ force = true })` does the same as `restore_clear` outside the picker.
+
+## Branches
+
+With `store.per_branch = true` every branch of a repository keeps its own notes, so a review of one branch does not show up on another. The store follows the checked-out branch, read from `HEAD` of the repository or worktree whenever the store is used and on `FocusGained` and `BufEnter`, and the marks are redrawn when it changes. A detached HEAD uses the store of the repository, which is also where notes taken before `per_branch` was turned on stay. `pick({ all = true })` brings notes over from the other branches, and archives remember the branch they were taken on.
 
 ## Sources
 
@@ -752,7 +762,7 @@ sources = {
 | `show` | Show the notes under the cursor in a float. |
 | `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |
 | `next` / `prev` | Jump to the next or previous note in the buffer. |
-| `pick` | Pick a note of the repository and jump to it. |
+| `pick` | Pick a note of the repository and jump to it, `pick!` also lists the notes of the other branches to copy them over. |
 | `quickfix` | Send every note of the repository to the quickfix list as `[TYPE] <location>  <first line>  (<posted>)`, with ` (<reach>)` after the type when it is not the default. Repository notes are listed without a file and are not jumped to. Each entry's `type` is the first letter of its type name and its `user_data` holds `id`, `type`, `reach` and `posted`, for quickfix plugins to filter on. |
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |

@@ -476,16 +476,67 @@ local function bind(names)
   return actions, keys
 end
 
+--- Annotations to pick from: those of the current branch, then with `all` those of the other branches carrying their branch.
+---@param all? boolean
+---@return { annotation: annotate.Annotation, branch?: string }[]
+local function candidates(all)
+  local list = vim.tbl_map(function(annotation)
+    return { annotation = annotation }
+  end, store.all())
+
+  if all then
+    for _, entry in ipairs(store.branches()) do
+      for _, annotation in ipairs(entry.annotations) do
+        table.insert(list, { annotation = annotation, branch = entry.branch or "repository" })
+      end
+    end
+  end
+
+  return list
+end
+
+---@param candidate { annotation: annotate.Annotation, branch?: string }
+---@return string
+local function candidate_label(candidate)
+  return M.describe(candidate.annotation) .. (candidate.branch and ("  [%s]"):format(candidate.branch) or "")
+end
+
+--- Copies notes of other branches into the store of the current branch, returning the notes of the store they became.
+---@param list { annotation: annotate.Annotation, branch?: string }[]
+---@return annotate.Annotation[]
+local function bring(list)
+  local copies = {}
+  for _, candidate in ipairs(list) do
+    if candidate.branch then
+      local copy = vim.deepcopy(candidate.annotation)
+      copy.posted = nil
+      table.insert(copies, copy)
+    end
+  end
+  if #copies == 0 then
+    return {}
+  end
+
+  local count = store.merge(copies)
+  marks.refresh()
+  notify(("Restored %d annotations into %s."):format(count, store.branch or "the repository"), vim.log.levels.INFO)
+
+  return vim.tbl_map(store.same, copies)
+end
+
 --- Picks an annotation of the repository and jumps to it.
-function M.pick()
+--- `all` also lists the notes of the other branches with `store.per_branch`; choosing one copies it into the current branch first.
+---@param opts? { all?: boolean }
+function M.pick(opts)
+  opts = opts or {}
   local r = git.workspace()
 
-  local annotations = store.all()
-  if #annotations == 0 then
+  if #candidates(opts.all) == 0 then
     return notify("There are no annotations.", vim.log.levels.INFO)
   end
 
-  local function open(annotation)
+  local function open(candidate)
+    local annotation = candidate.branch and bring({ candidate })[1] or candidate.annotation
     if not annotation.file then
       return input.open({ type = annotation.type, text = annotation.text, reach = annotation.reach }, function(type_key, text, reach)
         if type_key then
@@ -499,27 +550,29 @@ function M.pick()
   end
 
   if backend() == "select" then
-    return vim.ui.select(annotations, { prompt = config.options.picker.title, format_item = M.describe }, function(annotation)
-      if annotation then
-        open(annotation)
+    return vim.ui.select(candidates(opts.all), { prompt = config.options.picker.title, format_item = candidate_label }, function(candidate)
+      if candidate then
+        open(candidate)
       end
     end)
   end
 
-  local actions, keys = bind({ "edit", "delete", "delete_all", "type", "split" })
+  local actions, keys = bind(opts.all and { "restore" } or { "edit", "delete", "delete_all", "type", "split" })
 
   require("snacks").picker.pick({
-    title = config.options.picker.title,
+    title = opts.all and ("%s (all branches)"):format(config.options.picker.title) or config.options.picker.title,
     finder = function()
-      return vim.tbl_map(function(annotation)
+      return vim.tbl_map(function(candidate)
+        local annotation = candidate.annotation
         return {
-          text = M.describe(annotation),
+          text = candidate_label(candidate),
           file = annotation.file and vim.fs.joinpath(r, annotation.file),
           pos = annotation.file and { math.max(annotation.line, 1), 0 },
           preview = not annotation.file and { text = table.concat(vim.list_extend(posted(annotation), { annotation.text }), "\n"), ft = "markdown" } or nil,
           annotation = annotation,
+          candidate = candidate,
         }
-      end, store.all())
+      end, candidates(opts.all))
     end,
     actions = actions,
     win = {
@@ -537,7 +590,7 @@ function M.pick()
     confirm = function(picker, item)
       picker:close()
       if item then
-        open(item.annotation)
+        open(item.candidate)
       end
     end,
   })
@@ -621,6 +674,15 @@ M.actions = {
       confirm(("Archive all %d annotations and keep the %d selected?"):format(total, #annotations), split)
     end,
   },
+  restore = {
+    desc = "Copy the selected notes of other branches into this branch",
+    action = function(picker)
+      bring(vim.tbl_map(function(item)
+        return item.candidate
+      end, picker:selected({ fallback = true })))
+      picker:refresh()
+    end,
+  },
   restore_delete = {
     desc = "Delete archives permanently",
     action = function(picker)
@@ -676,11 +738,12 @@ M.actions = {
   },
 }
 
---- Describes an archive by its time, its note count and its notes per type.
+--- Describes an archive by its time, its branch when it was the store of one, its note count and its notes per type.
 ---@param path string
 ---@return string
 local function archive_label(path)
-  local annotations = store.read(path)
+  local content = store.decode(path)
+  local annotations = content.annotations or {}
 
   local counts = {}
   for _, annotation in ipairs(annotations) do
@@ -700,7 +763,7 @@ local function archive_label(path)
 
   local year, month, day, hour, min = vim.fs.basename(path):match("%-(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)%d%d[%-%d]*%.json$")
 
-  return ("%s-%s-%s %s:%s · %d notes · %s"):format(year, month, day, hour, min, #annotations, table.concat(types, ", "))
+  return ("%s-%s-%s %s:%s%s · %d notes · %s"):format(year, month, day, hour, min, content.branch and (" · " .. content.branch) or "", #annotations, table.concat(types, ", "))
 end
 
 --- Restores an archive, archiving the current notes first unless merging into them.

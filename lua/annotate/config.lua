@@ -40,6 +40,7 @@ local M = {}
 
 ---@class annotate.StoreConfig
 ---@field dir string
+---@field per_branch boolean keep a store per branch, a detached HEAD uses the store of the repository
 
 ---@class annotate.MarksConfig
 ---@field sign boolean
@@ -61,6 +62,7 @@ local M = {}
 ---@field delete_all string|false
 ---@field type string|false
 ---@field split string|false
+---@field restore string|false
 ---@field restore_delete string|false
 ---@field restore_clear string|false
 
@@ -272,6 +274,7 @@ local defaults = {
   confirm_delete = true,
   store = {
     dir = vim.fs.joinpath(vim.fn.stdpath("data"), "annotate"),
+    per_branch = false,
   },
   marks = {
     sign = true,
@@ -348,6 +351,8 @@ local defaults = {
       delete_all = "<C-x>",
       type = "<C-t>",
       split = "<C-c>",
+      -- in pick({ all = true })
+      restore = "<C-r>",
       restore_delete = "<C-d>",
       restore_clear = "<C-x>",
     },

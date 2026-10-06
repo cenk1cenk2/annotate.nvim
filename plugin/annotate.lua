@@ -39,8 +39,8 @@ local subcommands = {
   prev = function()
     require("annotate").prev()
   end,
-  pick = function()
-    require("annotate").pick()
+  pick = function(_, all)
+    require("annotate").pick({ all = all })
   end,
   quickfix = function()
     require("annotate").quickfix()

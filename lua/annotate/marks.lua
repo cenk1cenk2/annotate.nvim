@@ -177,6 +177,14 @@ function M.setup()
     end,
   })
 
+  vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
+    group = group,
+    desc = "reload the store when the branch changed",
+    callback = function()
+      require("annotate.store").load()
+    end,
+  })
+
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = group,
     callback = function(event)

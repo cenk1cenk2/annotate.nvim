@@ -460,6 +460,35 @@ T["picker rows show the type, location, first line and where the note was posted
   })
 end
 
+T["pick lists the current branch, and with all copies a note of another branch before jumping to it"] = function()
+  require("annotate").setup({ store = { per_branch = true } })
+  vim.system({ "git", "symbolic-ref", "HEAD", "refs/heads/feature" }):wait()
+  local theirs = store.add({ type = "report", file = "a.lua", line = 2, text = "from feature" })
+  store.update(theirs.id, { posted = { posted("draft", "!5") } })
+  vim.system({ "git", "symbolic-ref", "HEAD", "refs/heads/main" }):wait()
+  store.add({ type = "apply", file = "a.lua", line = 1, text = "on main" })
+
+  local offered
+  vim.ui.select = function(items, opts, callback)
+    offered = vim.tbl_map(opts.format_item, items)
+    callback(nil)
+  end
+  api.pick()
+  eq(#offered, 1)
+
+  local prompts = answer({ "[feature]" })
+  api.pick({ all = true })
+
+  eq(prompts, { "Annotations" })
+  eq(texts(), { "on main", "from feature" })
+  eq(store.load(true)[2].posted, nil)
+  eq(vim.api.nvim_win_get_cursor(0)[1], 2)
+
+  answer({ "[feature]" })
+  api.pick({ all = true })
+  eq(#store.load(true), 2)
+end
+
 T["quickfix lists every note, repository notes without a file"] = function()
   local pinned = store.add({ type = "report", file = "a.lua", line = 2, text = "pinned" })
   store.update(pinned.id, { posted = { posted("draft", "!5") } })

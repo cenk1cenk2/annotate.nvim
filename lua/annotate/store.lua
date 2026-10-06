@@ -9,6 +9,9 @@
 local M = {
   ---@type string?
   root = nil,
+  ---branch the loaded store belongs to, nil for the store of the repository
+  ---@type string?
+  branch = nil,
   ---@type annotate.Annotation[]
   annotations = {},
   ---where `publish` posted the type legend
@@ -46,15 +49,29 @@ function M.hash(root)
   return vim.fn.sha256(root):sub(1, 16)
 end
 
---- Store file for the workspace of the current working directory.
+--- Branch whose store holds the notes of the current working directory, nil without `store.per_branch` or on a detached HEAD.
+---@return string?
+function M.current_branch()
+  return require("annotate.config").options.store.per_branch and git.branch() or nil
+end
+
+--- Store file of a workspace, of one of its branches when given.
+---@param root string
+---@param branch? string
+---@return string
+function M.file(root, branch)
+  return vim.fs.joinpath(M.dir(), ("%s%s.json"):format(M.hash(root), branch and ("-" .. M.hash(branch)) or ""))
+end
+
+--- Store file for the workspace of the current working directory and its branch.
 ---@return string
 function M.path()
-  return vim.fs.joinpath(M.dir(), M.hash(git.workspace()) .. ".json")
+  return M.file(git.workspace(), M.current_branch())
 end
 
 --- Decoded content of a store file, empty when it does not exist.
 ---@param path string
----@return { annotations?: annotate.Annotation[], legend?: { posted?: annotate.Posted[] } }
+---@return { root?: string, branch?: string, annotations?: annotate.Annotation[], legend?: { posted?: annotate.Posted[] } }
 function M.decode(path)
   local file = io.open(path, "r")
   if not file then
@@ -87,16 +104,17 @@ function M.read(path)
   return M.decode(path).annotations or {}
 end
 
---- Loads the annotations of the current workspace, reading the file only when the workspace changed.
+--- Loads the annotations of the current workspace, reading the file only when the workspace or its branch changed.
 ---@param force? boolean
 ---@return annotate.Annotation[]
 function M.load(force)
-  local root = git.workspace()
-  if not force and M.root == root then
+  local root, branch = git.workspace(), M.current_branch()
+  if not force and M.root == root and M.branch == branch then
     return M.annotations
   end
 
-  M.root = root
+  local switched = M.root == root and M.branch ~= branch
+  M.root, M.branch = root, branch
 
   local path = M.path()
   local content = M.decode(path)
@@ -106,6 +124,11 @@ function M.load(force)
   log.debug(("store loaded: path=%s #annotations=%d"):format(path, #M.annotations))
 
   vim.schedule(M.prune)
+  if switched then
+    vim.schedule(function()
+      require("annotate.marks").refresh()
+    end)
+  end
 
   return M.annotations
 end
@@ -117,7 +140,7 @@ function M.save()
   vim.fn.mkdir(vim.fs.dirname(path), "p")
 
   local file = assert(io.open(path, "w"))
-  file:write(vim.json.encode({ root = M.root, annotations = M.annotations, legend = next(M.legend) and M.legend or nil }))
+  file:write(vim.json.encode({ root = M.root, branch = M.branch, annotations = M.annotations, legend = next(M.legend) and M.legend or nil }))
   file:close()
 
   log.debug(("store saved: path=%s #annotations=%d"):format(path, #M.annotations))
@@ -255,6 +278,30 @@ function M.archives()
   return archives
 end
 
+--- Stores of the other branches of the current workspace holding notes, and the store of the repository, by branch.
+---@return { path: string, branch?: string, annotations: annotate.Annotation[] }[]
+function M.branches()
+  M.load()
+
+  local current = M.path()
+  local paths = vim.list_extend({ M.file(M.root) }, vim.fn.glob(vim.fs.joinpath(M.dir(), M.hash(M.root) .. "-*.json"), false, true))
+
+  local stores = {}
+  for _, path in ipairs(paths) do
+    if path ~= current then
+      local content = M.decode(path)
+      if content.annotations and #content.annotations > 0 then
+        table.insert(stores, { path = path, branch = content.branch, annotations = content.annotations })
+      end
+    end
+  end
+  table.sort(stores, function(a, b)
+    return (a.branch or "") < (b.branch or "")
+  end)
+
+  return stores
+end
+
 --- Restores an archive into the store and removes it from the archive.
 --- An empty store takes the archive as is, otherwise `merge` appends the annotations it does not have yet and `replace` archives the store first.
 ---@param path string
@@ -274,26 +321,42 @@ function M.restore(path, mode)
     M.archive()
   end
 
-  local count = 0
-  for _, annotation in ipairs(restored) do
-    local duplicate = vim.iter(M.annotations):any(function(existing)
-      return existing.file == annotation.file
-        and existing.line == annotation.line
-        and existing.line_end == annotation.line_end
-        and existing.rev == annotation.rev
-        and existing.type == annotation.type
-        and existing.reach == annotation.reach
-        and existing.text == annotation.text
-    end)
+  local count = M.merge(restored)
 
-    if not duplicate then
+  log.info(("archive restored: path=%s mode=%s #restored=%d"):format(path, mode, count))
+
+  return count
+end
+
+--- The annotation of the store with the same location, type, reach and text, if any.
+---@param annotation annotate.Annotation
+---@return annotate.Annotation?
+function M.same(annotation)
+  return vim.iter(M.annotations):find(function(existing)
+    return existing.file == annotation.file
+      and existing.line == annotation.line
+      and existing.line_end == annotation.line_end
+      and existing.rev == annotation.rev
+      and existing.type == annotation.type
+      and existing.reach == annotation.reach
+      and existing.text == annotation.text
+  end)
+end
+
+--- Appends the annotations the store does not have yet and saves it.
+---@param annotations annotate.Annotation[]
+---@return integer appended
+function M.merge(annotations)
+  M.load()
+
+  local count = 0
+  for _, annotation in ipairs(annotations) do
+    if not M.same(annotation) then
       table.insert(M.annotations, annotation)
       count = count + 1
     end
   end
   M.save()
-
-  log.info(("archive restored: path=%s mode=%s #restored=%d"):format(path, mode, count))
 
   return count
 end
