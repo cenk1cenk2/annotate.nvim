@@ -33,8 +33,9 @@ local M = {}
 ---@field position string
 ---@field title annotate.InputFormat
 ---@field title_pos string
----@field footer annotate.InputFormat
+---@field footer? annotate.InputFormat nil lists the `hints` keys natively
 ---@field footer_pos string
+---@field hints string[] names of `keys` listed in the footer, leaving out those the input has no use for
 ---@field filetype string
 ---@field markdown boolean
 ---@field keys annotate.InputKeys
@@ -79,6 +80,7 @@ local M = {}
 ---@class annotate.PickerConfig
 ---@field title string
 ---@field keys annotate.PickerKeys
+---@field hints string[] names of `keys` listed in the footer of a picker that binds them
 ---@field force annotate.PickerForce
 
 ---@class annotate.QuickfixConfig
@@ -296,32 +298,18 @@ local defaults = {
     height = 10,
     border = "rounded",
     position = "float",
-    title = function(_, _, types, index)
+    title = function(_, _, types, index, reach)
       local names = {}
       for i, t in ipairs(types) do
         table.insert(names, i == index and ("[%s %s]"):format(t.icon, t.name) or ("%s %s"):format(t.icon, t.name))
       end
 
-      return table.concat(names, " · ")
+      return table.concat(names, " · ") .. (#types[index].reaches > 1 and (" (%s)"):format(reach) or "")
     end,
     title_pos = "center",
-    footer = function(t, keys, _, _, reach)
-      local reaches = vim.tbl_map(function(r)
-        return r == reach and #t.reaches > 1 and ("[%s]"):format(r) or r
-      end, t.reaches)
-
-      return (" %s%s  %s/%s cycle  %s describe  %s selection  %s submit  %s close "):format(
-        table.concat(reaches, " · "),
-        #t.reaches > 1 and ("  %s reach"):format(keys.reach) or "",
-        keys.cycle_prev,
-        keys.cycle,
-        keys.describe,
-        keys.selection,
-        keys.submit,
-        keys.close
-      )
-    end,
+    footer = nil,
     footer_pos = "center",
+    hints = { "cycle", "reach", "describe", "submit" },
     filetype = "annotate",
     markdown = true,
     keys = {
@@ -343,6 +331,7 @@ local defaults = {
   },
   picker = {
     title = "Annotations",
+    hints = { "scope_next", "scope_prev", "describe", "edit", "delete", "restore", "restore_delete" },
     keys = {
       scope_next = "<C-o>",
       scope_prev = "<A-o>",

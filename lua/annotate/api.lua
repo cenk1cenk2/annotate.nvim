@@ -425,7 +425,8 @@ function M.show()
     text = lines,
     bo = { filetype = "markdown", modifiable = false },
     wo = { wrap = true, linebreak = true },
-    keys = { q = "close", ["<Esc>"] = "close" },
+    keys = { q = { "q", "close", desc = "Close" }, ["<Esc>"] = { "<Esc>", "close", desc = "Close" } },
+    footer_keys = { "q" },
     on_buf = function(self)
       pcall(vim.treesitter.start, self.buf, "markdown")
     end,
@@ -507,21 +508,29 @@ function M.describe(annotation)
   )
 end
 
---- Snacks picker actions and their keys for the named `M.actions`, leaving out the disabled ones.
+--- Snacks picker windows binding the keys of the named `M.actions`, leaving out the disabled ones,
+--- the input listing those of `picker.hints` in its footer, and the actions they run.
 ---@param names string[]
 ---@return table<string, table>, table<string, table>
 local function bind(names)
   local actions = {}
   local keys = {}
+  local hints = {}
   for _, name in ipairs(names) do
     local key = config.options.picker.keys[name]
     if key then
       actions["annotate_" .. name] = M.actions[name]
-      keys[key] = { "annotate_" .. name, mode = { "i", "n" } }
+      keys[key] = { "annotate_" .. name, mode = { "i", "n" }, desc = M.actions[name].desc }
+      if vim.list_contains(config.options.picker.hints, name) then
+        table.insert(hints, key)
+      end
     end
   end
 
-  return actions, keys
+  return {
+    input = { keys = keys, footer_keys = #hints > 0 and hints or nil },
+    list = { keys = keys },
+  }, actions
 end
 
 ---@alias annotate.Scope "all"|"buffer"|"file"|"lines"|"cursor"|"repository"
@@ -641,7 +650,7 @@ function M.pick(opts)
     vim.api.nvim_win_set_cursor(0, { math.min(math.max(annotation.line, 1), vim.api.nvim_buf_line_count(0)), 0 })
   end
 
-  local actions, keys = bind(vim.list_extend({ "scope_next", "scope_prev", "describe" }, opts.all and { "restore" } or { "edit", "delete", "delete_all", "type", "split" }))
+  local win, actions = bind(vim.list_extend({ "scope_next", "scope_prev", "describe" }, opts.all and { "restore" } or { "edit", "delete", "delete_all", "type", "split" }))
 
   require("snacks").picker.pick({
     source = "annotate",
@@ -666,10 +675,7 @@ function M.pick(opts)
       )
     end,
     actions = actions,
-    win = {
-      input = { keys = keys },
-      list = { keys = keys },
-    },
+    win = win,
     format = "text",
     preview = function(ctx)
       local annotation = ctx.item.annotation
@@ -728,14 +734,14 @@ M.actions = {
     end,
   },
   describe = {
-    desc = "Toggle the description of the note type",
+    desc = "Describe type",
     action = function(picker)
       picker.opts.describe = not picker.opts.describe
       picker.preview:show(picker, { force = true })
     end,
   },
   edit = {
-    desc = "Edit annotation",
+    desc = "Edit",
     action = function(picker, item)
       if not item then
         return
@@ -753,7 +759,7 @@ M.actions = {
     end,
   },
   delete = {
-    desc = "Delete annotations",
+    desc = "Delete",
     action = function(picker)
       local annotations = vim.tbl_map(function(item)
         return item.annotation
@@ -829,7 +835,7 @@ M.actions = {
     end,
   },
   restore = {
-    desc = "Copy the selected notes of other branches into this branch",
+    desc = "Bring to branch",
     action = function(picker)
       bring(vim.tbl_map(function(item)
         return item.candidate
@@ -838,7 +844,7 @@ M.actions = {
     end,
   },
   restore_delete = {
-    desc = "Delete archives permanently",
+    desc = "Delete archives",
     action = function(picker)
       local paths = vim.tbl_map(function(item)
         return item.path
@@ -944,7 +950,7 @@ function M.restore(opts)
     return notify("There are no archives.", vim.log.levels.INFO)
   end
 
-  local actions, keys = bind({ "restore_delete", "restore_clear" })
+  local win, actions = bind({ "restore_delete", "restore_clear" })
 
   require("snacks").picker.pick({
     source = "annotate_archive",
@@ -959,10 +965,7 @@ function M.restore(opts)
       end, store.archives())
     end,
     actions = actions,
-    win = {
-      input = { keys = keys },
-      list = { keys = keys },
-    },
+    win = win,
     format = "text",
     preview = "preview",
     confirm = function(picker, item)

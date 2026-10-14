@@ -37,22 +37,36 @@ T["title falls back to the current type when it does not fit"] = function()
   eq(input.title(types, 2, 9), "… [2 B] …")
 end
 
-T["footer names the reach and the keys"] = function()
-  local types = config.options.types
+T["the footer lists the hint keys the input has use for"] = function()
+  local fake = H.snacks()
+  local input = require("annotate.input")
 
-  eq(
-    config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1, "here"),
-    " here  <C-p>/<C-n> cycle  <C-k> describe  <C-y> selection  <C-s> submit  <C-q> close "
-  )
+  input.open({ type = "a" }, function() end)
+  eq(fake.win.opts.footer_keys, { "<C-n>", "<C-k>", "<C-s>" })
+  eq(fake.win.opts.footer, nil)
+  fake.win.close()
+
+  input.open({ title = "Free text" }, function() end)
+  eq(fake.win.opts.footer_keys, { "<C-s>" })
+  fake.win.close()
+
+  config.options.types[1].reaches = { "here", "pattern" }
+  input.open({ type = "a" }, function() end)
+  eq(fake.win.opts.footer_keys, { "<C-n>", "<C-l>", "<C-k>", "<C-s>" })
+  fake.win.close()
+
+  config.options.input.footer = " custom "
+  input.open({ type = "a" }, function() end)
+  eq({ fake.win.opts.footer, fake.win.opts.footer_keys }, { " custom ", nil })
+  fake.win.close()
+  vim.cmd.stopinsert()
 end
 
-T["footer marks the current reach and its key when the type has several"] = function()
-  local t = { key = "a", name = "A", reaches = { "here", "pattern" } }
+T["title names the reach when the type has several"] = function()
+  local t = { key = "a", name = "A", icon = "1", reaches = { "here", "pattern" } }
 
-  eq(
-    config.resolve(config.options.input.footer, t, config.options.input.keys, { t }, 1, "pattern"),
-    " here · [pattern]  <C-l> reach  <C-p>/<C-n> cycle  <C-k> describe  <C-y> selection  <C-s> submit  <C-q> close "
-  )
+  eq(config.resolve(config.options.input.title, t, config.options.input.keys, { t }, 1, "pattern"), "[1 A] (pattern)")
+  eq(require("annotate.input").title({ t }, 1, 5, "pattern"), "[1 A] (pattern)")
 end
 
 ---@param lines string[]
