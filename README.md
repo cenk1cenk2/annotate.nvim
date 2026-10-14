@@ -15,7 +15,7 @@ Leave typed notes on lines, ranges and whole files of a project, on ordinary buf
 
 - Neovim 0.11+, 0.13+ for file logging through `vim.log`.
 - `git` on the `PATH`.
-- [snacks.nvim](https://github.com/folke/snacks.nvim) is recommended for the input window, the picker, the hover float and the preview. Without it the input falls back to `vim.ui.input`, the picker to `vim.ui.select` and the hover float to `vim.lsp.util.open_floating_preview`.
+- [snacks.nvim](https://github.com/folke/snacks.nvim) for the pickers, and for the input window, the hover float and the preview. Without it the pickers do not work, the input falls back to `vim.ui.input` and the hover float to `vim.lsp.util.open_floating_preview`.
 - [diffview-plus.nvim](https://github.com/dlyongemallo/diffview-plus.nvim) is optional, for annotating revisions inside diff views.
 - [glab](https://gitlab.com/gitlab-org/cli) or [gh](https://cli.github.com), authenticated for the host of the remote, are optional, for publishing.
 
@@ -337,11 +337,12 @@ require("annotate").setup({
         return r == reach and #t.reaches > 1 and ("[%s]"):format(r) or r
       end, t.reaches)
 
-      return (" %s%s  %s/%s cycle  %s selection  %s submit  %s close "):format(
+      return (" %s%s  %s/%s cycle  %s describe  %s selection  %s submit  %s close "):format(
         table.concat(reaches, " · "),
         #t.reaches > 1 and ("  %s reach"):format(keys.reach) or "",
         keys.cycle_prev,
         keys.cycle,
+        keys.describe,
         keys.selection,
         keys.submit,
         keys.close
@@ -361,6 +362,7 @@ require("annotate").setup({
       submit = "<C-s>",
       cancel = "q",
       close = "<C-q>",
+      describe = "<C-k>",
     },
   },
   show = {
@@ -372,11 +374,12 @@ require("annotate").setup({
     focusable = true,
   },
   picker = {
-    -- "snacks" | "select", nil uses snacks.nvim when available
-    backend = nil,
     title = "Annotations",
-    -- actions on the selected notes in the snacks.nvim picker, false disables one
+    -- actions in the snacks.nvim picker, false disables one
     keys = {
+      scope_next = "<C-o>",
+      scope_prev = "<A-o>",
+      describe = "<C-k>",
       edit = "<C-e>",
       delete = "<C-d>",
       delete_all = "<C-x>",
@@ -495,6 +498,7 @@ The input is a floating snacks.nvim window with markdown highlighting. The title
 - `cycle` advances through the types in the configured order, in insert and normal mode.
 - `cycle_prev` goes back through the types, in insert and normal mode. Cycling onto a type that does not have the current reach falls back to its default.
 - `reach` cycles through the reaches of the current type, in insert and normal mode.
+- `describe` toggles a float below the input with the prompts of the current type at the current reach, the one the agent reads in the export and the one reviewers read on the forge, and its reaches. It follows `cycle`, `cycle_prev` and `reach` while open, in insert and normal mode.
 - `selection` inserts the annotated lines in a fenced block tagged with the filetype below the cursor, or as the whole note when it is empty, in insert and normal mode.
 - `submit` saves the note, in insert and normal mode. An empty note is discarded.
 - `cancel` closes the window without saving, in normal mode.
@@ -507,7 +511,10 @@ Each row shows the type icon and name, the reach when it is not the default of t
 
 The snacks.nvim preview shows a note on lines as markdown: where it was posted, its location, the lines it covers in a fenced code block in the language of the file, read from its revision for a note on a diff side, then the note itself. A whole-file note previews the file, a repository note its text.
 
-`<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. An action that opens a window of its own, the input of `edit` or a confirmation, closes the picker first and reopens it with its query, selection and cursor once that window is done, unless the action ends the picker. The `select` backend has no actions.
+`<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. An action that opens a window of its own, the input of `edit` or a confirmation, closes the picker first and reopens it with its query, selection and cursor once that window is done, unless the action ends the picker.
+
+- `scope_next` and `scope_prev` switch the list between the scopes below, keeping the picker open.
+- `describe` toggles the preview between the note and the prompts of its type at its reach, like the `describe` key of the input.
 
 - `edit` opens the input on the note and updates it in place.
 - `delete` deletes the selected notes, or the one under the cursor, asking first when `confirm_delete` is set unless `picker.force.delete` is.
@@ -517,7 +524,16 @@ The snacks.nvim preview shows a note on lines as markdown: where it was posted, 
 
 `<Tab>` and `<S-Tab>` select notes, as snacks.nvim binds them by default.
 
-`pick({ all = true })` also lists the notes of the other branches with `store.per_branch`, and those of the repository store taken before it, each marked with `[<branch>]`. Choosing one copies it into the current branch first, without where it was posted, then jumps to it; a note the branch already has is not copied twice. Its only action is `restore`, which copies the selected notes of other branches into the current branch and keeps the picker open. The notes of the other branches stay where they are.
+`pick()` opens on every note, `pick({ scope = ... })` on a scope, and the scope shows in the title. The scopes, in the order the keys cycle through them:
+
+- `all` lists every note.
+- `buffer` lists the notes on the file of the buffer the picker was opened on, whole-file notes and notes on lines, on any revision, so the notes on a diff side of the file count too.
+- `file` lists only its whole-file notes.
+- `lines` lists only its notes on lines.
+- `cursor` lists the notes covering the cursor line at the revision of the buffer, with the whole-file notes on line 1.
+- `repository` lists the notes attached to no file.
+
+`pick({ all = true })` also lists the notes of the other branches with `store.per_branch`, and those of the repository store taken before it, each marked with `[<branch>]`. Choosing one copies it into the current branch first, without where it was posted, then jumps to it; a note the branch already has is not copied twice. Next to the scope and describe keys its only action is `restore`, which copies the selected notes of other branches into the current branch and keeps the picker open. The notes of the other branches stay where they are.
 
 ### Show
 
@@ -759,7 +775,7 @@ sources = {
 | `show` | Show the notes under the cursor in a float. |
 | `delete` | Delete the note under the cursor after confirmation, `delete!` without it. |
 | `next` / `prev` | Jump to the next or previous note in the buffer. |
-| `pick` | Pick a note of the repository and jump to it, `pick!` also lists the notes of the other branches to copy them over. |
+| `pick [all\|buffer\|file\|lines\|cursor\|repository]` | Pick a note of the repository and jump to it, opening on the given scope, `pick!` also lists the notes of the other branches to copy them over. |
 | `quickfix` | Send every note of the repository to the quickfix list as `[TYPE] <location>  <first line>  (<posted>)`, with ` (<reach>)` after the type when it is not the default. Repository notes are listed without a file and are not jumped to. Each entry's `type` is the first letter of its type name and its `user_data` holds `id`, `type`, `reach` and `posted`, for quickfix plugins to filter on. |
 | `export [file\|clipboard\|both]` | Export the notes. |
 | `preview` | Preview the export. |

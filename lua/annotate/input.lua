@@ -90,6 +90,28 @@ function M.title(types, index, width, reach)
   return ("%s%s%s"):format(left >= 1 and "… " or "", table.concat(shown, " · "), right <= #types and " …" or "")
 end
 
+--- Markdown lines telling what a type asks for at a reach: the prompt the agent reads in the export, the one reviewers read on the forge, and its reaches.
+---@param t annotate.Type
+---@param reach string
+---@return string[]
+function M.describe(t, reach)
+  local lines = { ("## %s %s (%s)"):format(t.icon, t.name, reach) }
+  for _, kind in ipairs({ { "export", "Export" }, { "external", "Forge" } }) do
+    local prompt = config.prompt(t, kind[1], reach)
+    vim.list_extend(lines, { "", ("**%s**"):format(kind[2]), "" })
+    vim.list_extend(lines, vim.split(prompt ~= "" and prompt or "_none_", "\n", { plain = true }))
+  end
+
+  if #t.reaches > 1 then
+    local reaches = vim.tbl_map(function(r)
+      return r == reach and ("[%s]"):format(r) or r
+    end, t.reaches)
+    vim.list_extend(lines, { "", ("Reaches: %s"):format(table.concat(reaches, " · ")) })
+  end
+
+  return lines
+end
+
 --- The annotated lines of the buffer in a fenced block tagged with its filetype, nil for whole-file and repository notes.
 ---@param bufnr integer
 ---@param location? annotate.Location
@@ -129,6 +151,8 @@ function M.open(opts, callback)
 
   local result = {}
   local prefill = M.prefill(origin, opts.location)
+  ---@type snacks.win?
+  local panel
 
   --- Fills an empty input with the prefill on a prefill type, and empties an untouched prefill on any other type.
   ---@return boolean filled
@@ -166,6 +190,39 @@ function M.open(opts, callback)
     end
   end
 
+  --- Opens the description of the current type and reach below the input, replacing the one already open.
+  local function describe(self)
+    if panel then
+      panel:close()
+    end
+
+    local lines = M.describe(types[index], reach)
+    panel = snacks.win({
+      relative = "win",
+      win = self.win,
+      row = vim.api.nvim_win_get_height(self.win) + 1,
+      col = 0,
+      width = vim.api.nvim_win_get_width(self.win),
+      height = math.min(#lines, cfg.height),
+      border = cfg.border,
+      focusable = false,
+      enter = false,
+      text = lines,
+      bo = { filetype = "markdown", modifiable = false },
+      wo = { wrap = true, linebreak = true },
+      on_buf = function(win)
+        pcall(vim.treesitter.start, win.buf, "markdown")
+      end,
+    })
+  end
+
+  --- Shows the description again after the type or reach changed, when it is open.
+  local function redescribe(self)
+    if panel and panel:valid() then
+      describe(self)
+    end
+  end
+
   local function cycle(self, step)
     if opts.title then
       return
@@ -177,6 +234,7 @@ function M.open(opts, callback)
     end
     title(self)
     fill(self)
+    redescribe(self)
   end
 
   local function widen(self)
@@ -187,6 +245,7 @@ function M.open(opts, callback)
 
     reach = reaches[(vim.fn.index(reaches, reach) + 1) % #reaches + 1]
     title(self)
+    redescribe(self)
   end
 
   --- Inserts the annotated lines as a fenced block below the cursor, or as the whole input when it is empty.
@@ -248,6 +307,22 @@ function M.open(opts, callback)
         mode = { "i", "n" },
         desc = "Cycle annotation reach",
       },
+      [cfg.keys.describe] = {
+        cfg.keys.describe,
+        function(self)
+          if opts.title then
+            return
+          end
+
+          if panel and panel:valid() then
+            panel:close()
+          else
+            describe(self)
+          end
+        end,
+        mode = { "i", "n" },
+        desc = "Describe annotation type",
+      },
       [cfg.keys.selection] = {
         cfg.keys.selection,
         selection,
@@ -289,6 +364,9 @@ function M.open(opts, callback)
       },
     },
     on_close = function()
+      if panel then
+        panel:close()
+      end
       vim.schedule(function()
         callback(result[1], result[2], result[3])
       end)

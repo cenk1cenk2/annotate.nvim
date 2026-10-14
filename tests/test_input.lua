@@ -40,7 +40,10 @@ end
 T["footer names the reach and the keys"] = function()
   local types = config.options.types
 
-  eq(config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1, "here"), " here  <C-p>/<C-n> cycle  <C-y> selection  <C-s> submit  <C-q> close ")
+  eq(
+    config.resolve(config.options.input.footer, types[1], config.options.input.keys, types, 1, "here"),
+    " here  <C-p>/<C-n> cycle  <C-k> describe  <C-y> selection  <C-s> submit  <C-q> close "
+  )
 end
 
 T["footer marks the current reach and its key when the type has several"] = function()
@@ -48,7 +51,7 @@ T["footer marks the current reach and its key when the type has several"] = func
 
   eq(
     config.resolve(config.options.input.footer, t, config.options.input.keys, { t }, 1, "pattern"),
-    " here · [pattern]  <C-l> reach  <C-p>/<C-n> cycle  <C-y> selection  <C-s> submit  <C-q> close "
+    " here · [pattern]  <C-l> reach  <C-p>/<C-n> cycle  <C-k> describe  <C-y> selection  <C-s> submit  <C-q> close "
   )
 end
 
@@ -116,6 +119,53 @@ T["cycling into a prefill type fills only an empty input"] = function()
   eq(vim.api.nvim_buf_get_lines(fake.win.buf, 0, -1, false), { "mine" })
   vim.cmd.stopinsert()
   package.loaded.snacks = nil
+end
+
+T["describe lists the export and forge prompts of the type at the reach"] = function()
+  local t = {
+    key = "a",
+    name = "A",
+    icon = "1",
+    reaches = { "here", "pattern" },
+    export = { prompt = "fix it", reach = { pattern = "fix every one" } },
+    external = { prompt = "" },
+  }
+
+  eq(require("annotate.input").describe(t, "pattern"), {
+    "## 1 A (pattern)",
+    "",
+    "**Export**",
+    "",
+    "fix every one",
+    "",
+    "**Forge**",
+    "",
+    "_none_",
+    "",
+    "Reaches: here · [pattern]",
+  })
+end
+
+T["the describe key toggles the description, following the type while open"] = function()
+  config.setup({
+    types = {
+      { key = "a", name = "A", icon = "1", hl = "Comment", export = { prompt = "first" }, external = { prompt = "" } },
+      { key = "b", name = "B", icon = "2", hl = "Comment", export = { prompt = "second" }, external = { prompt = "" } },
+    },
+  })
+  local fake = H.snacks()
+  local keys = config.options.input.keys
+
+  require("annotate.input").open({ type = "a" }, function() end)
+  H.press(fake, keys.describe)
+  eq(vim.api.nvim_buf_get_lines(fake.panel.buf, 0, -1, false)[5], "first")
+
+  H.press(fake, keys.cycle)
+  eq(vim.api.nvim_buf_get_lines(fake.panel.buf, 0, -1, false)[5], "second")
+
+  H.press(fake, keys.describe)
+  eq(fake.panel.valid(), false)
+  vim.cmd.stopinsert()
 end
 
 T["a titled input calls back with the empty text on submit and nils on close"] = function()

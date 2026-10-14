@@ -22,6 +22,7 @@ local M = {}
 ---@field submit string
 ---@field cancel string
 ---@field close string
+---@field describe string
 
 ---@alias annotate.InputFormat string|fun(type: annotate.Type, keys: annotate.InputKeys, types: annotate.Type[], index: integer, reach: string): string
 
@@ -65,6 +66,9 @@ local M = {}
 ---@field restore string|false
 ---@field restore_delete string|false
 ---@field restore_clear string|false
+---@field scope_next string|false
+---@field scope_prev string|false
+---@field describe string|false
 
 ---@class annotate.PickerForce
 ---@field delete boolean
@@ -73,7 +77,6 @@ local M = {}
 ---@field restore_clear boolean
 
 ---@class annotate.PickerConfig
----@field backend? "snacks"|"select" nil picks snacks when available
 ---@field title string
 ---@field keys annotate.PickerKeys
 ---@field force annotate.PickerForce
@@ -307,11 +310,12 @@ local defaults = {
         return r == reach and #t.reaches > 1 and ("[%s]"):format(r) or r
       end, t.reaches)
 
-      return (" %s%s  %s/%s cycle  %s selection  %s submit  %s close "):format(
+      return (" %s%s  %s/%s cycle  %s describe  %s selection  %s submit  %s close "):format(
         table.concat(reaches, " · "),
         #t.reaches > 1 and ("  %s reach"):format(keys.reach) or "",
         keys.cycle_prev,
         keys.cycle,
+        keys.describe,
         keys.selection,
         keys.submit,
         keys.close
@@ -328,6 +332,7 @@ local defaults = {
       submit = "<C-s>",
       cancel = "q",
       close = "<C-q>",
+      describe = "<C-k>",
     },
   },
   show = {
@@ -337,9 +342,11 @@ local defaults = {
     focusable = true,
   },
   picker = {
-    backend = nil,
     title = "Annotations",
     keys = {
+      scope_next = "<C-o>",
+      scope_prev = "<A-o>",
+      describe = "<C-k>",
       edit = "<C-e>",
       delete = "<C-d>",
       delete_all = "<C-x>",

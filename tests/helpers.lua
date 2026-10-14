@@ -55,16 +55,61 @@ function M.snacks()
       end
       function win.close()
         pcall(vim.api.nvim_win_close, win.win, true)
-        opts.on_close()
+        if opts.on_close then
+          opts.on_close()
+        end
       end
       opts.on_buf(win)
-      fake.win = win
+      if opts.enter ~= false then
+        fake.win = win
+      else
+        fake.panel = win
+      end
 
       return win
     end,
   }
 
   return fake
+end
+
+--- Stands in for the snacks.nvim picker next to `M.snacks`, confirming in each pick the first item whose text contains the wanted string
+--- in turn and leaving the picker open when none does. Returns the pickers it opened, each with its `opts` and `texts()` of its items.
+---@param wanted string[]
+---@return table[]
+function M.picker(wanted)
+  local opened = {}
+  package.loaded.snacks = vim.tbl_extend("force", package.loaded.snacks or {}, {
+    picker = {
+      pick = function(opts)
+        local picker = { opts = opts, title = opts.title, closed = false, refreshed = 0 }
+        function picker.items()
+          return opts.finder and opts.finder(opts) or opts.items
+        end
+        function picker.texts()
+          return vim.tbl_map(function(item)
+            return item.text
+          end, picker.items())
+        end
+        function picker.close(self)
+          self.closed = true
+        end
+        function picker.refresh(self)
+          self.refreshed = self.refreshed + 1
+        end
+        table.insert(opened, picker)
+
+        local want = table.remove(wanted, 1)
+        for _, item in ipairs(want and picker.items() or {}) do
+          if item.text:find(want, 1, true) then
+            return opts.confirm(picker, item)
+          end
+        end
+      end,
+    },
+  })
+
+  return opened
 end
 
 ---@param fake table

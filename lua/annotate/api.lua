@@ -16,11 +16,6 @@ local function notify(message, level)
   vim.notify(message, level or vim.log.levels.WARN, { title = config.options.notify.title })
 end
 
----@return "snacks"|"select"
-local function backend()
-  return config.options.picker.backend or (pcall(require, "snacks") and "snacks" or "select")
-end
-
 ---@param bufnr integer
 ---@param line1 integer
 ---@param line2 integer
@@ -127,28 +122,9 @@ local function selection(opts)
   return resolve(0, math.min(line1, line2), math.max(line1, line2))
 end
 
----@param t annotate.Type
----@return string
-local function type_label(t)
-  return ("%s %s  %s"):format(t.icon, t.name, table.concat(t.reaches, " · "))
-end
-
 --- Lets the user choose an annotation type, calling back with its key unless cancelled.
 ---@param callback fun(key: string)
 local function choose_type(callback)
-  local types = config.options.types
-
-  if backend() == "select" then
-    return vim.ui.select(types, {
-      prompt = "Annotation type",
-      format_item = type_label,
-    }, function(t)
-      if t then
-        callback(t.key)
-      end
-    end)
-  end
-
   require("snacks").picker.pick({
     title = "Annotation type",
     items = vim.tbl_map(function(t)
@@ -156,8 +132,8 @@ local function choose_type(callback)
         return ("%s: %s"):format(reach, config.prompt(t, "export", reach))
       end, t.reaches)
 
-      return { text = type_label(t), key = t.key, preview = { text = table.concat(prompts, "\n\n") } }
-    end, types),
+      return { text = ("%s %s  %s"):format(t.icon, t.name, table.concat(t.reaches, " · ")), key = t.key, preview = { text = table.concat(prompts, "\n\n") } }
+    end, config.options.types),
     format = "text",
     preview = "preview",
     confirm = function(picker, item)
@@ -548,29 +524,60 @@ local function bind(names)
   return actions, keys
 end
 
---- Annotations to pick from: those of the current branch, then with `all` those of the other branches carrying their branch.
+---@alias annotate.Scope "all"|"buffer"|"file"|"lines"|"cursor"|"repository"
+
+--- Scopes of the picker in the order its keys cycle through them.
+---@type annotate.Scope[]
+M.scopes = { "all", "buffer", "file", "lines", "cursor", "repository" }
+
+--- Whether an annotation is in a scope of the picker. `buffer`, `file` and `lines` take the notes on the file of the buffer
+--- the picker was opened on at any revision, `cursor` those covering its cursor line at its revision, with the whole-file ones on line 1.
+---@param scope annotate.Scope
+---@param annotation annotate.Annotation
+---@param here { file?: annotate.Location, cursor?: annotate.Location }
+---@return boolean
+local function within(scope, annotation, here)
+  if scope == "all" then
+    return true
+  elseif scope == "repository" then
+    return annotation.file == nil
+  elseif scope == "cursor" then
+    local location = here.cursor
+
+    return location ~= nil
+      and annotation.file == location.file
+      and annotation.rev == location.rev
+      and (annotation.line == 0 and location.line == 1 or annotation.line > 0 and location.line >= annotation.line and location.line <= (annotation.line_end or annotation.line))
+  end
+
+  local inside = here.file ~= nil and annotation.file == here.file.file
+  if scope == "file" then
+    return inside and annotation.line == 0
+  elseif scope == "lines" then
+    return inside and annotation.line > 0
+  end
+
+  return inside
+end
+
+--- Annotations to pick from in the scope: those of the current branch, then with `all` those of the other branches carrying their branch.
 ---@param all? boolean
+---@param keep fun(annotation: annotate.Annotation): boolean
 ---@return { annotation: annotate.Annotation, branch?: string }[]
-local function candidates(all)
+local function candidates(all, keep)
   local list = vim.tbl_map(function(annotation)
     return { annotation = annotation }
-  end, store.all())
+  end, vim.tbl_filter(keep, store.all()))
 
   if all then
     for _, entry in ipairs(store.branches()) do
-      for _, annotation in ipairs(entry.annotations) do
+      for _, annotation in ipairs(vim.tbl_filter(keep, entry.annotations)) do
         table.insert(list, { annotation = annotation, branch = entry.branch or "repository" })
       end
     end
   end
 
   return list
-end
-
----@param candidate { annotation: annotate.Annotation, branch?: string }
----@return string
-local function candidate_label(candidate)
-  return M.describe(candidate.annotation) .. (candidate.branch and ("  [%s]"):format(candidate.branch) or "")
 end
 
 --- Copies notes of other branches into the store of the current branch, returning the notes of the store they became.
@@ -598,12 +605,25 @@ end
 
 --- Picks an annotation of the repository and jumps to it.
 --- `all` also lists the notes of the other branches with `store.per_branch`; choosing one copies it into the current branch first.
----@param opts? { all?: boolean }
+--- `scope` is the scope the picker opens on, `all` by default, and its keys switch between `M.scopes`.
+---@param opts? { all?: boolean, scope?: annotate.Scope }
 function M.pick(opts)
   opts = opts or {}
   local r = git.workspace()
+  local scope = opts.scope or "all"
+  if not vim.list_contains(M.scopes, scope) then
+    error(("annotate: unknown picker scope: %s"):format(scope))
+  end
 
-  if #candidates(opts.all) == 0 then
+  local line = vim.fn.line(".")
+  local here = { file = sources.resolve(0, 0, 0), cursor = sources.resolve(0, line, line) }
+  if scope ~= "all" and scope ~= "repository" and not here.file then
+    return notify("No annotation source matches this buffer.")
+  end
+
+  if #candidates(opts.all, function()
+    return true
+  end) == 0 then
     return notify("There are no annotations.", vim.log.levels.INFO)
   end
 
@@ -621,30 +641,29 @@ function M.pick(opts)
     vim.api.nvim_win_set_cursor(0, { math.min(math.max(annotation.line, 1), vim.api.nvim_buf_line_count(0)), 0 })
   end
 
-  if backend() == "select" then
-    return vim.ui.select(candidates(opts.all), { prompt = config.options.picker.title, format_item = candidate_label }, function(candidate)
-      if candidate then
-        open(candidate)
-      end
-    end)
-  end
-
-  local actions, keys = bind(opts.all and { "restore" } or { "edit", "delete", "delete_all", "type", "split" })
+  local actions, keys = bind(vim.list_extend({ "scope_next", "scope_prev", "describe" }, opts.all and { "restore" } or { "edit", "delete", "delete_all", "type", "split" }))
 
   require("snacks").picker.pick({
     source = "annotate",
-    title = opts.all and ("%s (all branches)"):format(config.options.picker.title) or config.options.picker.title,
-    finder = function()
-      return vim.tbl_map(function(candidate)
-        local annotation = candidate.annotation
-        return {
-          text = candidate_label(candidate),
-          file = annotation.file and vim.fs.joinpath(r, annotation.file),
-          pos = annotation.file and { math.max(annotation.line, 1), 0 },
-          annotation = annotation,
-          candidate = candidate,
-        }
-      end, candidates(opts.all))
+    title = M.title(scope, opts.all),
+    scope = scope,
+    branches = opts.all,
+    finder = function(picker_opts)
+      return vim.tbl_map(
+        function(candidate)
+          local annotation = candidate.annotation
+          return {
+            text = M.describe(annotation) .. (candidate.branch and ("  [%s]"):format(candidate.branch) or ""),
+            file = annotation.file and vim.fs.joinpath(r, annotation.file),
+            pos = annotation.file and { math.max(annotation.line, 1), 0 },
+            annotation = annotation,
+            candidate = candidate,
+          }
+        end,
+        candidates(picker_opts.branches, function(annotation)
+          return within(picker_opts.scope, annotation, here)
+        end)
+      )
     end,
     actions = actions,
     win = {
@@ -654,11 +673,16 @@ function M.pick(opts)
     format = "text",
     preview = function(ctx)
       local annotation = ctx.item.annotation
-      if annotation.file and annotation.line == 0 then
+      if ctx.picker.opts.describe then
+        ctx.item.preview = { text = table.concat(input.describe(marks.type(annotation), marks.reach(annotation)), "\n"), ft = "markdown" }
+
+        return require("snacks").picker.preview.preview(ctx)
+      elseif annotation.file and annotation.line == 0 then
         return require("snacks").picker.preview.file(ctx)
       end
 
-      ctx.item.preview = ctx.item.preview or { text = M.preview_note(r, annotation), ft = "markdown" }
+      ctx.item.note = ctx.item.note or M.preview_note(r, annotation)
+      ctx.item.preview = { text = ctx.item.note, ft = "markdown" }
 
       return require("snacks").picker.preview.preview(ctx)
     end,
@@ -671,9 +695,45 @@ function M.pick(opts)
   })
 end
 
+--- Title of the picker, naming its scope unless it lists every note.
+---@param scope annotate.Scope
+---@param all? boolean whether it lists the notes of the other branches
+---@return string
+function M.title(scope, all)
+  return ("%s%s%s"):format(config.options.picker.title, scope ~= "all" and (" (%s)"):format(scope) or "", all and " (all branches)" or "")
+end
+
+--- Moves the picker by `step` through `M.scopes`.
+---@param picker snacks.Picker
+---@param step integer
+local function rescope(picker, step)
+  picker.opts.scope = M.scopes[(vim.fn.index(M.scopes, picker.opts.scope) + step) % #M.scopes + 1]
+  picker.title = M.title(picker.opts.scope, picker.opts.branches)
+  picker:refresh()
+end
+
 --- Picker actions on the selected annotations, in the shape snacks.nvim takes them.
 ---@type table<string, { desc: string, action: fun(picker: snacks.Picker, item?: snacks.picker.Item) }>
 M.actions = {
+  scope_next = {
+    desc = "Next scope",
+    action = function(picker)
+      rescope(picker, 1)
+    end,
+  },
+  scope_prev = {
+    desc = "Previous scope",
+    action = function(picker)
+      rescope(picker, -1)
+    end,
+  },
+  describe = {
+    desc = "Toggle the description of the note type",
+    action = function(picker)
+      picker.opts.describe = not picker.opts.describe
+      picker.preview:show(picker, { force = true })
+    end,
+  },
   edit = {
     desc = "Edit annotation",
     action = function(picker, item)
@@ -882,14 +942,6 @@ function M.restore(opts)
   opts = opts or {}
   if #store.archives() == 0 then
     return notify("There are no archives.", vim.log.levels.INFO)
-  end
-
-  if backend() == "select" then
-    return vim.ui.select(store.archives(), { prompt = "Restore archive", format_item = archive_label }, function(path)
-      if path then
-        restore(path, opts.mode)
-      end
-    end)
   end
 
   local actions, keys = bind({ "restore_delete", "restore_clear" })
