@@ -668,14 +668,18 @@ T["the picker preview shows the code a note covers in a fenced block before its 
   vim.fn.writefile({ "ONE", "TWO" }, "a.lua")
 
   local range = store.add({ type = "report", file = "a.lua", line = 1, line_end = 2, text = "broken" })
-  eq(api.preview_note(root, range), table.concat({ "`a.lua:1-2`", "", "```lua", "ONE", "TWO", "```", "", "broken" }, "\n"))
+  eq(api.preview_note(root, range), table.concat({ "```lua", "-- a.lua:1-2", "ONE", "TWO", "```", "", "broken" }, "\n"))
 
   local committed = store.add({ type = "report", file = "a.lua", line = 2, rev = sha, text = "old" })
-  eq(api.preview_note(root, committed), table.concat({ ("`a.lua:~2 @ %s`"):format(sha), "", "```lua", "two", "```", "", "old" }, "\n"))
+  eq(api.preview_note(root, committed), table.concat({ "```lua", ("-- a.lua:~2 @ %s"):format(sha), "two", "```", "", "old" }, "\n"))
 
   vim.system({ "git", "add", "a.lua" }):wait()
   local staged = store.add({ type = "report", file = "a.lua", line = 1, rev = ":0:", text = "staged" })
-  eq(vim.split(api.preview_note(root, staged), "\n")[4], "ONE")
+  eq(vim.split(api.preview_note(root, staged), "\n")[3], "ONE")
+
+  vim.fn.writefile({ "plain" }, "b.txt")
+  local text = store.add({ type = "report", file = "b.txt", line = 1, text = "no comments" })
+  eq(api.preview_note(root, text), table.concat({ "`b.txt:1`", "", "```text", "plain", "```", "", "no comments" }, "\n"))
 
   eq(api.preview_note(root, store.add({ type = "report", file = "a.lua", line = 0, text = "whole" })), "whole")
   eq(api.preview_note(root, store.add({ type = "report", line = 0, text = "repository" })), "repository")

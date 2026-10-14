@@ -328,7 +328,8 @@ local function covered(root, annotation)
   return lines and vim.list_slice(lines, annotation.line, annotation.line_end or annotation.line)
 end
 
---- Markdown preview of a note: where it was posted, the code it covers in a fenced block when it covers lines, then its text.
+--- Markdown preview of a note: where it was posted, the code it covers in a fenced block opening with a comment on its location
+--- when it covers lines, the location above the block when the language has no comments, then its text.
 ---@param root string
 ---@param annotation annotate.Annotation
 ---@return string
@@ -344,9 +345,20 @@ function M.preview_note(root, annotation)
       fence = fence .. "`"
     end
 
-    table.insert(lines, ("`%s`"):format(require("annotate.export").location(annotation)))
-    table.insert(lines, "")
-    table.insert(lines, fence .. (vim.filetype.match({ filename = annotation.file }) or ""))
+    local location = require("annotate.export").location(annotation)
+    local ft = vim.filetype.match({ filename = annotation.file })
+    local commentstring = ft and vim.filetype.get_option(ft, "commentstring") or ""
+    local comment = commentstring:find("%s", 1, true) and commentstring:gsub("%%s", function()
+      return location
+    end)
+    if not comment then
+      vim.list_extend(lines, { ("`%s`"):format(location), "" })
+    end
+
+    table.insert(lines, fence .. (ft or ""))
+    if comment then
+      table.insert(lines, comment)
+    end
     vim.list_extend(lines, code)
     vim.list_extend(lines, { fence, "" })
   end
