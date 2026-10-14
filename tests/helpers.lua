@@ -46,7 +46,9 @@ function M.snacks()
       function win.text()
         return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
       end
-      function win.set_title() end
+      function win.set_title(self, title)
+        self.title = title
+      end
       function win.valid()
         return vim.api.nvim_win_is_valid(win.win)
       end

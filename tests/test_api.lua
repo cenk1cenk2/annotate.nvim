@@ -604,6 +604,32 @@ T["pick opens on a scope and its keys cycle through the scopes"] = function()
   eq(notes(pickers[1]), {})
 end
 
+T["the picker footers list the hint keys each picker binds"] = function()
+  require("annotate").setup()
+  store.add({ type = "report", file = "a.lua", line = 1, text = "one" })
+
+  local function footer(start)
+    local pickers = H.picker({})
+    start()
+    return pickers[1].opts.win.input.footer_keys
+  end
+
+  eq(footer(api.pick), { "<C-o>", "<A-o>", "<C-k>", "<C-e>", "<C-d>" })
+  eq(
+    footer(function()
+      api.pick({ all = true })
+    end),
+    { "<C-o>", "<A-o>", "<C-k>", "<C-r>" }
+  )
+
+  store.archive()
+  eq(footer(api.restore), { "<C-d>" })
+
+  require("annotate").setup({ picker = { hints = {} } })
+  store.add({ type = "report", file = "a.lua", line = 1, text = "one" })
+  eq(footer(api.pick), nil)
+end
+
 T["the describe key shows the prompts of the type of a note in the preview"] = function()
   require("annotate").setup()
   local added = store.add({ type = "report", file = "a.lua", line = 1, text = "broken" })
@@ -642,14 +668,18 @@ T["the picker preview shows the code a note covers in a fenced block before its 
   vim.fn.writefile({ "ONE", "TWO" }, "a.lua")
 
   local range = store.add({ type = "report", file = "a.lua", line = 1, line_end = 2, text = "broken" })
-  eq(api.preview_note(root, range), table.concat({ "`a.lua:1-2`", "", "```lua", "ONE", "TWO", "```", "", "broken" }, "\n"))
+  eq(api.preview_note(root, range), table.concat({ "```lua", "-- a.lua:1-2", "ONE", "TWO", "```", "", "broken" }, "\n"))
 
   local committed = store.add({ type = "report", file = "a.lua", line = 2, rev = sha, text = "old" })
-  eq(api.preview_note(root, committed), table.concat({ ("`a.lua:~2 @ %s`"):format(sha), "", "```lua", "two", "```", "", "old" }, "\n"))
+  eq(api.preview_note(root, committed), table.concat({ "```lua", ("-- a.lua:~2 @ %s"):format(sha), "two", "```", "", "old" }, "\n"))
 
   vim.system({ "git", "add", "a.lua" }):wait()
   local staged = store.add({ type = "report", file = "a.lua", line = 1, rev = ":0:", text = "staged" })
-  eq(vim.split(api.preview_note(root, staged), "\n")[4], "ONE")
+  eq(vim.split(api.preview_note(root, staged), "\n")[3], "ONE")
+
+  vim.fn.writefile({ "plain" }, "b.txt")
+  local text = store.add({ type = "report", file = "b.txt", line = 1, text = "no comments" })
+  eq(api.preview_note(root, text), table.concat({ "`b.txt:1`", "", "```text", "plain", "```", "", "no comments" }, "\n"))
 
   eq(api.preview_note(root, store.add({ type = "report", file = "a.lua", line = 0, text = "whole" })), "whole")
   eq(api.preview_note(root, store.add({ type = "report", line = 0, text = "repository" })), "repository")
@@ -765,10 +795,10 @@ T["the reach key cycles the reaches of the type and submits the chosen one"] = f
   local keys = require("annotate.config").options.input.keys
 
   api.add()
-  eq(fake.win.opts.footer:find("[here] · pattern", 1, true) ~= nil, true)
+  eq(fake.win.title:find("(here)", 1, true) ~= nil, true)
 
   H.press(fake, keys.reach)
-  eq(vim.api.nvim_win_get_config(fake.win.win).footer[1][1]:find("here · [pattern]", 1, true) ~= nil, true)
+  eq(fake.win.title:find("(pattern)", 1, true) ~= nil, true)
 
   vim.api.nvim_buf_set_lines(fake.win.buf, 0, -1, false, { "everywhere" })
   H.press(fake, keys.submit)

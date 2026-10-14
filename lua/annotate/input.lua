@@ -47,14 +47,19 @@ end
 ---@return string
 function M.title(types, index, width, reach)
   local cfg = config.options.input
-  local title = config.resolve(cfg.title, types[index], cfg.keys, types, index, reach or types[index].reaches[1])
+  reach = reach or types[index].reaches[1]
+  local title = config.resolve(cfg.title, types[index], cfg.keys, types, index, reach)
 
   if vim.fn.strdisplaywidth(title) <= width then
     return title
   end
 
   local function label(i)
-    return i == index and ("[%s %s]"):format(types[i].icon, types[i].name) or ("%s %s"):format(types[i].icon, types[i].name)
+    if i ~= index then
+      return ("%s %s"):format(types[i].icon, types[i].name)
+    end
+
+    return ("[%s %s]%s"):format(types[i].icon, types[i].name, #types[i].reaches > 1 and (" (%s)"):format(reach) or "")
   end
 
   local shown = { label(index) }
@@ -178,13 +183,30 @@ function M.open(opts, callback)
   end
 
   local function footer()
-    return config.resolve(cfg.footer, types[index], cfg.keys, types, index, reach)
+    return cfg.footer and config.resolve(cfg.footer, types[index], cfg.keys, types, index, reach)
   end
+
+  --- Keys of `input.hints` the footer lists, leaving out those this input has no use for.
+  local hints = vim
+    .iter(cfg.hints)
+    :filter(function(name)
+      return not (
+        opts.title and vim.list_contains({ "cycle", "cycle_prev", "reach", "describe", "selection" }, name)
+        or name == "reach" and not vim.iter(types):any(function(t)
+          return #t.reaches > 1
+        end)
+        or name == "selection" and not prefill
+      )
+    end)
+    :map(function(name)
+      return cfg.keys[name]
+    end)
+    :totable()
 
   local function title(self)
     self:set_title(opts.title and (" %s "):format(opts.title) or M.title(types, index, vim.api.nvim_win_get_width(self.win), reach), cfg.title_pos)
     local text = footer()
-    if self.opts.footer ~= text and self:valid() and self:has_border() then
+    if text and self.opts.footer ~= text and self:valid() and self:has_border() then
       self.opts.footer = text
       vim.api.nvim_win_set_config(self.win, { footer = text, footer_pos = cfg.footer_pos })
     end
@@ -271,8 +293,9 @@ function M.open(opts, callback)
     border = cfg.border,
     title = " ",
     title_pos = cfg.title_pos,
-    footer = footer(),
+    footer = footer() or nil,
     footer_pos = cfg.footer_pos,
+    footer_keys = not cfg.footer and #hints > 0 and hints or nil,
     enter = true,
     text = opts.text,
     bo = { filetype = cfg.filetype, buftype = "nofile", bufhidden = "wipe" },
@@ -291,7 +314,7 @@ function M.open(opts, callback)
           cycle(self, 1)
         end,
         mode = { "i", "n" },
-        desc = "Cycle annotation type",
+        desc = "Next type",
       },
       [cfg.keys.cycle_prev] = {
         cfg.keys.cycle_prev,
@@ -299,13 +322,13 @@ function M.open(opts, callback)
           cycle(self, -1)
         end,
         mode = { "i", "n" },
-        desc = "Cycle annotation type backwards",
+        desc = "Previous type",
       },
       [cfg.keys.reach] = {
         cfg.keys.reach,
         widen,
         mode = { "i", "n" },
-        desc = "Cycle annotation reach",
+        desc = "Next reach",
       },
       [cfg.keys.describe] = {
         cfg.keys.describe,
@@ -321,13 +344,13 @@ function M.open(opts, callback)
           end
         end,
         mode = { "i", "n" },
-        desc = "Describe annotation type",
+        desc = "Describe type",
       },
       [cfg.keys.selection] = {
         cfg.keys.selection,
         selection,
         mode = { "i", "n" },
-        desc = "Insert the annotated lines",
+        desc = "Insert selection",
       },
       [cfg.keys.submit] = {
         cfg.keys.submit,
@@ -343,7 +366,7 @@ function M.open(opts, callback)
           self:close()
         end,
         mode = { "i", "n" },
-        desc = "Submit annotation",
+        desc = "Submit",
       },
       [cfg.keys.close] = {
         cfg.keys.close,
@@ -352,7 +375,7 @@ function M.open(opts, callback)
           self:close()
         end,
         mode = { "i", "n" },
-        desc = "Close annotation",
+        desc = "Close",
       },
       [cfg.keys.cancel] = {
         cfg.keys.cancel,
@@ -360,7 +383,7 @@ function M.open(opts, callback)
           self:close()
         end,
         mode = "n",
-        desc = "Cancel annotation",
+        desc = "Cancel",
       },
     },
     on_close = function()

@@ -321,34 +321,21 @@ require("annotate").setup({
     border = "rounded",
     -- snacks.nvim window position
     position = "float",
-    -- string or fun(type, keys, types, index, reach), re-evaluated when cycling types, truncated on both sides around the current type when it does not fit
-    title = function(_, _, types, index)
+    -- string or fun(type, keys, types, index, reach), re-evaluated when cycling types or reaches, truncated on both sides around the current type when it does not fit
+    title = function(_, _, types, index, reach)
       local names = {}
       for i, t in ipairs(types) do
         table.insert(names, i == index and ("[%s %s]"):format(t.icon, t.name) or ("%s %s"):format(t.icon, t.name))
       end
 
-      return table.concat(names, " · ")
+      return table.concat(names, " · ") .. (#types[index].reaches > 1 and (" (%s)"):format(reach) or "")
     end,
     title_pos = "center",
-    -- string or fun(type, keys, types, index, reach), re-evaluated when cycling types or reaches
-    footer = function(t, keys, _, _, reach)
-      local reaches = vim.tbl_map(function(r)
-        return r == reach and #t.reaches > 1 and ("[%s]"):format(r) or r
-      end, t.reaches)
-
-      return (" %s%s  %s/%s cycle  %s describe  %s selection  %s submit  %s close "):format(
-        table.concat(reaches, " · "),
-        #t.reaches > 1 and ("  %s reach"):format(keys.reach) or "",
-        keys.cycle_prev,
-        keys.cycle,
-        keys.describe,
-        keys.selection,
-        keys.submit,
-        keys.close
-      )
-    end,
+    -- string or fun(type, keys, types, index, reach), re-evaluated when cycling types or reaches; nil lists the hints natively
+    footer = nil,
     footer_pos = "center",
+    -- keys listed in the footer by their description, leaving out those the input has no use for
+    hints = { "cycle", "reach", "describe", "submit" },
     -- filetype of the input buffer; registered as a treesitter alias of markdown.
     -- The buffer also carries `vim.b.annotate = true` and `vim.b.annotate_origin` (the annotated buffer)
     filetype = "annotate",
@@ -375,6 +362,8 @@ require("annotate").setup({
   },
   picker = {
     title = "Annotations",
+    -- keys listed in the footer of a picker that binds them, by their description; `?` lists them all
+    hints = { "scope_next", "scope_prev", "describe", "edit", "delete", "restore", "restore_delete" },
     -- actions in the snacks.nvim picker, false disables one
     keys = {
       scope_next = "<C-o>",
@@ -493,7 +482,7 @@ Each type describes itself twice, for two different readers:
 
 ### Input
 
-The input is a floating snacks.nvim window with markdown highlighting. The title lists every type with the current one in brackets, the footer shows the reaches of the current type, the current one in brackets, and the keys.
+The input is a floating snacks.nvim window with markdown highlighting. The title lists every type with the current one in brackets, followed by the current reach when the type has several. The footer lists the `input.hints` keys with their descriptions through snacks.nvim, leaving out the reach key when no type has several reaches, the selection key when there is nothing to insert, and the type keys in a free-text input.
 
 - `cycle` advances through the types in the configured order, in insert and normal mode.
 - `cycle_prev` goes back through the types, in insert and normal mode. Cycling onto a type that does not have the current reach falls back to its default.
@@ -509,9 +498,9 @@ A type with `prefill = "selection"`, like `rewrite`, starts a new note with the 
 
 Each row shows the type icon and name, the reach when it is not the default of the type, the location (`path:line`, `path:line-end`, `path` for a whole file, `repository`, with `~` and `@ <rev>` for a revision), the first line of the note, and where it was posted, like `draft !5, published #1`.
 
-The snacks.nvim preview shows a note on lines as markdown: where it was posted, its location, the lines it covers in a fenced code block in the language of the file, read from its revision for a note on a diff side, then the note itself. A whole-file note previews the file, a repository note its text.
+The snacks.nvim preview shows a note on lines as markdown: where it was posted, the lines it covers in a fenced code block in the language of the file, read from its revision for a note on a diff side and opening with a comment on its location like `-- a.lua:1-2`, then the note itself. A language without comments gets the location above the block instead. A whole-file note previews the file, a repository note its text.
 
-`<CR>` jumps to the note. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. An action that opens a window of its own, the input of `edit` or a confirmation, closes the picker first and reopens it with its query, selection and cursor once that window is done, unless the action ends the picker.
+`<CR>` jumps to the note. The footer of each picker lists the `picker.hints` keys it binds with their descriptions. The snacks.nvim picker binds the `picker.keys` actions in insert and normal mode, and lists them in its help. An action that opens a window of its own, the input of `edit` or a confirmation, closes the picker first and reopens it with its query, selection and cursor once that window is done, unless the action ends the picker.
 
 - `scope_next` and `scope_prev` switch the list between the scopes below, keeping the picker open.
 - `describe` toggles the preview between the note and the prompts of its type at its reach, like the `describe` key of the input.
