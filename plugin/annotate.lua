@@ -39,8 +39,8 @@ local subcommands = {
   prev = function()
     require("annotate").prev()
   end,
-  pick = function(_, all)
-    require("annotate").pick({ all = all })
+  pick = function(cmd, all)
+    require("annotate").pick({ all = all, scope = cmd.fargs[2] })
   end,
   quickfix = function()
     require("annotate").quickfix()
@@ -82,7 +82,7 @@ end, {
     local args = vim.split(line, "%s+", { trimempty = true })
     local candidates = vim.tbl_keys(subcommands)
     if #args > 2 or #args == 2 and arglead == "" then
-      candidates = args[2] == "export" and { "file", "clipboard", "both" } or {}
+      candidates = ({ export = { "file", "clipboard", "both" }, pick = vim.list_extend({}, require("annotate.api").scopes) })[args[2]:gsub("!$", "")] or {}
     end
 
     table.sort(candidates)

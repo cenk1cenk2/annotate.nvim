@@ -20,7 +20,7 @@ function M.check()
   if pcall(require, "snacks") then
     health.ok("snacks.nvim is available")
   else
-    health.warn("snacks.nvim is not available, input falls back to vim.ui.input and the picker to vim.ui.select")
+    health.error("snacks.nvim is not available, the input falls back to vim.ui.input and the pickers do not work")
   end
 
   if vim.fn.executable("git") == 1 then

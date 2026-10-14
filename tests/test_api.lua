@@ -84,7 +84,7 @@ end
 
 T["add_with_type stores the chosen type on the visual selection"] = function()
   require("annotate").setup()
-  local prompts = answer({ "Report" })
+  local pickers = H.picker({ "Report" })
   input.open = function(opts, callback)
     opened = opts
     callback(opts.type, "chosen")
@@ -94,7 +94,7 @@ T["add_with_type stores the chosen type on the visual selection"] = function()
   eq(vim.fn.mode(), "V")
   api.add_with_type()
 
-  eq(prompts, { "Annotation type" })
+  eq(pickers[1].title, "Annotation type")
   eq(opened.type, "report")
   local added = store.load(true)[1]
   eq({ added.type, added.line, added.line_end, added.text }, { "report", 1, 2, "chosen" })
@@ -119,7 +119,7 @@ end
 
 T["add_file_with_type stores the chosen type on the whole file"] = function()
   require("annotate").setup()
-  local prompts = answer({ "Discuss" })
+  local pickers = H.picker({ "Discuss" })
   input.open = function(opts, callback)
     opened = opts
     callback(opts.type, "file note")
@@ -127,28 +127,28 @@ T["add_file_with_type stores the chosen type on the whole file"] = function()
 
   api.add_file_with_type()
 
-  eq(prompts, { "Annotation type" })
+  eq(pickers[1].title, "Annotation type")
   local added = store.load(true)[1]
   eq({ added.type, added.line, added.text }, { "discuss", 0, "file note" })
 end
 
 T["add_repository_with_type stores the chosen type attached to no file"] = function()
   require("annotate").setup()
-  local prompts = answer({ "Keep" })
+  local pickers = H.picker({ "Keep" })
   input.open = function(opts, callback)
     callback(opts.type, "repo note")
   end
 
   api.add_repository_with_type()
 
-  eq(prompts, { "Annotation type" })
+  eq(pickers[1].title, "Annotation type")
   local added = store.load(true)[1]
   eq({ added.type, added.file, added.line, added.text }, { "keep", nil, 0, "repo note" })
 end
 
 T["add_with_type does nothing when the chooser is cancelled"] = function()
   require("annotate").setup()
-  answer({ "missing" })
+  H.picker({ "missing" })
 
   api.add_with_type()
 
@@ -260,11 +260,11 @@ T["restore picks an archive by its label"] = function()
   store.add({ file = "a.lua", line = 2, type = "apply", text = "two" })
   store.archive()
   store.add({ file = "a.lua", line = 1, type = "report", text = "one" })
-  local prompts = answer({ " · 2 notes · 1 apply, 1 report" })
+  local pickers = H.picker({ " · 2 notes · 1 apply, 1 report" })
 
   api.restore({ mode = "merge" })
 
-  eq(prompts, { "Restore archive" })
+  eq(pickers[1].title, "Restore archive")
   eq(texts(), { "one", "two" })
 end
 
@@ -419,11 +419,11 @@ T["restore into a non-empty store archives it first and replaces it"] = function
   store.add({ file = "a.lua", line = 1, type = "report", text = "archived" })
   store.archive()
   store.add({ file = "a.lua", line = 2, type = "report", text = "current" })
-  local prompts = answer({ " · 1 notes · 1 report" })
+  local pickers = H.picker({ " · 1 notes · 1 report" })
 
   api.restore()
 
-  eq(prompts, { "Restore archive" })
+  eq(pickers[1].title, "Restore archive")
   eq(texts(), { "archived" })
   eq(#store.archives(), 1)
   eq(store.read(store.archives()[1])[1].text, "current")
@@ -434,7 +434,7 @@ T["restore merges only when asked to"] = function()
   store.add({ file = "a.lua", line = 1, type = "report", text = "archived" })
   store.archive()
   store.add({ file = "a.lua", line = 2, type = "report", text = "current" })
-  answer({ " · 1 notes · 1 report" })
+  H.picker({ " · 1 notes · 1 report" })
 
   api.restore({ mode = "merge" })
 
@@ -542,25 +542,94 @@ T["pick lists the current branch, and with all copies a note of another branch b
   vim.system({ "git", "symbolic-ref", "HEAD", "refs/heads/main" }):wait()
   store.add({ type = "apply", file = "a.lua", line = 1, text = "on main" })
 
-  local offered
-  vim.ui.select = function(items, opts, callback)
-    offered = vim.tbl_map(opts.format_item, items)
-    callback(nil)
-  end
+  local pickers = H.picker({})
   api.pick()
-  eq(#offered, 1)
+  eq(#pickers[1].texts(), 1)
 
-  local prompts = answer({ "[feature]" })
+  pickers = H.picker({ "[feature]" })
   api.pick({ all = true })
 
-  eq(prompts, { "Annotations" })
+  eq(pickers[1].title, "Annotations (all branches)")
   eq(texts(), { "on main", "from feature" })
   eq(store.load(true)[2].posted, nil)
   eq(vim.api.nvim_win_get_cursor(0)[1], 2)
 
-  answer({ "[feature]" })
+  H.picker({ "[feature]" })
   api.pick({ all = true })
   eq(#store.load(true), 2)
+end
+
+T["pick opens on a scope and its keys cycle through the scopes"] = function()
+  require("annotate").setup()
+  store.add({ type = "report", file = "a.lua", line = 1, text = "on line" })
+  store.add({ type = "discuss", file = "a.lua", line = 0, text = "on file" })
+  store.add({ type = "apply", file = "a.lua", line = 2, rev = "abcdef12345", text = "on a diff side" })
+  store.add({ type = "apply", file = "b.lua", line = 1, text = "elsewhere" })
+  store.add({ type = "consider", text = "overall" })
+
+  local function notes(shown)
+    return vim.tbl_map(function(item)
+      return item.annotation.text
+    end, shown.items())
+  end
+
+  local pickers = H.picker({})
+  api.pick()
+  local scoped = pickers[1]
+  eq(scoped.title, "Annotations")
+  eq(#notes(scoped), 5)
+
+  local seen = {}
+  for _ = 1, #api.scopes do
+    api.actions.scope_next.action(scoped)
+    table.insert(seen, { scoped.title, notes(scoped) })
+  end
+  eq(seen, {
+    { "Annotations (buffer)", { "on line", "on file", "on a diff side" } },
+    { "Annotations (file)", { "on file" } },
+    { "Annotations (lines)", { "on line", "on a diff side" } },
+    { "Annotations (cursor)", { "on line", "on file" } },
+    { "Annotations (repository)", { "overall" } },
+    { "Annotations", { "on line", "on file", "on a diff side", "elsewhere", "overall" } },
+  })
+  eq(scoped.refreshed, #api.scopes)
+
+  api.actions.scope_prev.action(scoped)
+  eq(scoped.opts.scope, "repository")
+
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+  pickers = H.picker({})
+  api.pick({ scope = "cursor" })
+  eq(pickers[1].title, "Annotations (cursor)")
+  eq(notes(pickers[1]), {})
+end
+
+T["the describe key shows the prompts of the type of a note in the preview"] = function()
+  require("annotate").setup()
+  local added = store.add({ type = "report", file = "a.lua", line = 1, text = "broken" })
+  local pickers = H.picker({})
+  api.pick()
+  local scoped = pickers[1]
+  local shown = {}
+  package.loaded.snacks.picker.preview = {
+    preview = function(ctx)
+      table.insert(shown, ctx.item.preview.text)
+    end,
+  }
+  scoped.preview = {
+    show = function()
+      scoped.opts.preview({ picker = scoped, item = scoped.items()[1] })
+    end,
+  }
+
+  scoped.preview.show()
+  api.actions.describe.action(scoped)
+  api.actions.describe.action(scoped)
+
+  local t = require("annotate.config").type("report")
+  eq(shown[1], api.preview_note(vim.fn.getcwd(), added))
+  eq(shown[2], table.concat(input.describe(t, t.reaches[1]), "\n"))
+  eq(shown[3], shown[1])
 end
 
 T["the picker preview shows the code a note covers in a fenced block before its text"] = function()
@@ -616,7 +685,7 @@ end
 ---@return table
 local function rewriting()
   input.open = open
-  require("annotate").setup({ picker = { backend = "select" } })
+  require("annotate").setup()
   vim.bo.filetype = "lua"
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -668,11 +737,13 @@ end
 T["add_with_type prefills from the buffer and line captured before the type chooser"] = function()
   local fake = rewriting()
   local origin = vim.api.nvim_get_current_buf()
-  vim.ui.select = function(items, _, callback)
-    vim.api.nvim_set_current_buf(vim.api.nvim_create_buf(true, true))
-    vim.api.nvim_win_set_cursor(0, { 1, 0 })
-    callback(items[2])
-  end
+  package.loaded.snacks.picker = {
+    pick = function(opts)
+      vim.api.nvim_set_current_buf(vim.api.nvim_create_buf(true, true))
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      opts.confirm({ close = function() end }, opts.items[2])
+    end,
+  }
 
   api.add_with_type()
 
